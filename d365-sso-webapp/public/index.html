@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D365 SSO - Page Web Personnalisée</title>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- MSAL.js v2 - Microsoft Authentication Library -->
+    <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- En-tête -->
+        <header class="header">
+            <h1>Page Web Personnalisée D365</h1>
+            <p class="subtitle">Authentification Microsoft SSO</p>
+        </header>
+
+        <!-- Section de statut -->
+        <div class="status-section">
+            <div class="status-card">
+                <div class="status-icon" id="auth-status-icon">⏳</div>
+                <div class="status-content">
+                    <h3>Statut d'authentification</h3>
+                    <p id="auth-status">Initialisation...</p>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="status-icon" id="d365-status-icon">⏳</div>
+                <div class="status-content">
+                    <h3>Contexte Dynamics 365</h3>
+                    <p id="d365-status">Vérification...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section utilisateur (cachée par défaut) -->
+        <div class="user-section hidden" id="user-section">
+            <div class="user-card">
+                <div class="user-avatar" id="user-avatar">
+                    <span id="user-initials">?</span>
+                </div>
+                <div class="user-info">
+                    <h2 id="user-name">Chargement...</h2>
+                    <p id="user-email"></p>
+                    <p id="user-id" class="text-muted"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section D365 (cachée par défaut) -->
+        <div class="d365-section hidden" id="d365-section">
+            <h3>Informations Dynamics 365</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Organisation:</span>
+                    <span class="info-value" id="d365-org">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">URL:</span>
+                    <span class="info-value" id="d365-url">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">User ID:</span>
+                    <span class="info-value" id="d365-user-id">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Dans iframe:</span>
+                    <span class="info-value" id="d365-iframe">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section d'actions -->
+        <div class="actions-section">
+            <button id="signin-button" class="btn btn-primary hidden">
+                Se connecter
+            </button>
+            <button id="signout-button" class="btn btn-secondary hidden">
+                Se déconnecter
+            </button>
+            <button id="refresh-button" class="btn btn-secondary">
+                Rafraîchir
+            </button>
+        </div>
+
+        <!-- Section de test API (cachée par défaut) -->
+        <div class="api-section hidden" id="api-section">
+            <h3>Test d'appel API</h3>
+            <p class="text-muted">Cette section permet de tester les appels à votre API backend avec le token d'authentification.</p>
+            <div class="api-controls">
+                <input
+                    type="text"
+                    id="api-endpoint"
+                    class="input-text"
+                    placeholder="https://votre-api.com/endpoint"
+                    value=""
+                >
+                <button id="test-api-button" class="btn btn-primary">
+                    Tester l'API
+                </button>
+            </div>
+            <div class="api-response hidden" id="api-response">
+                <h4>Réponse:</h4>
+                <pre id="api-response-content"></pre>
+            </div>
+        </div>
+
+        <!-- Section de debug -->
+        <div class="debug-section">
+            <details>
+                <summary>Informations de debug</summary>
+                <div class="debug-content">
+                    <h4>Configuration MSAL</h4>
+                    <pre id="debug-config"></pre>
+
+                    <h4>Token d'accès (preview)</h4>
+                    <pre id="debug-token"></pre>
+
+                    <h4>Logs</h4>
+                    <div id="debug-logs" class="debug-logs"></div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Pied de page -->
+        <footer class="footer">
+            <p>&copy; 2024 - Intégration D365 avec authentification Microsoft SSO</p>
+            <p class="text-muted">Développé avec MSAL.js v2</p>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.example.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/d365-context.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
