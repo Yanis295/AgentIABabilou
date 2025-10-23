@@ -11,10 +11,10 @@ const msalConfig = {
         authority: "https://login.microsoftonline.com/ee7b4ccb-8e30-435c-9368-1fce958df645",
 
         // URI de redirection après authentification
-        redirectUri: "https://red-sea-0552aa41e3.azurestaticapps.net",
+        redirectUri: "https://red-sea-0552aa41e.3.azurestaticapps.net/",
 
         // URI de redirection après déconnexion
-        postLogoutRedirectUri: "https://red-sea-0552aa41e3.azurestaticapps.net",
+        postLogoutRedirectUri: "https://red-sea-0552aa41e.3.azurestaticapps.net/",
 
         // Naviguer vers la page de login au lieu d'utiliser une popup
         navigateToLoginRequestUrl: false
