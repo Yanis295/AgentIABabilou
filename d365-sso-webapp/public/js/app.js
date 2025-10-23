@@ -159,6 +159,9 @@ class App {
             // Afficher la section de test API
             this.showApiSection();
 
+            // Afficher la section Copilot
+            this.showCopilotSection();
+
             // Afficher le token dans debug
             await this.updateDebugInfo();
 
@@ -177,6 +180,7 @@ class App {
         // Cacher les informations utilisateur
         this.hideUserSection();
         this.hideApiSection();
+        this.hideCopilotSection();
 
         // Afficher le bouton de connexion
         this.showSignInButton();
@@ -406,6 +410,14 @@ class App {
 
     hideApiSection() {
         document.getElementById('api-section')?.classList.add('hidden');
+    }
+
+    showCopilotSection() {
+        document.getElementById('copilot-section')?.classList.remove('hidden');
+    }
+
+    hideCopilotSection() {
+        document.getElementById('copilot-section')?.classList.add('hidden');
     }
 
     showSignInButton() {

@@ -417,6 +417,39 @@ body {
 .mb-3 { margin-bottom: 1.5rem; }
 .mb-4 { margin-bottom: 2rem; }
 
+/* ========== Copilot Section ========== */
+.copilot-section {
+    padding: 2rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--light-bg);
+}
+
+.copilot-section h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.copilot-container {
+    margin-top: 1.5rem;
+    background: var(--white);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    height: 600px;
+    position: relative;
+}
+
+.copilot-container iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
 /* ========== Responsive Design ========== */
 @media (max-width: 768px) {
     body {
@@ -467,6 +500,14 @@ body {
 
     .input-text {
         width: 100%;
+    }
+
+    .copilot-section {
+        padding: 1rem;
+    }
+
+    .copilot-container {
+        height: 500px;
     }
 }
 
