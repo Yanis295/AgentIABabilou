@@ -412,8 +412,14 @@ class App {
         document.getElementById('api-section')?.classList.add('hidden');
     }
 
-    showCopilotSection() {
-        document.getElementById('copilot-section')?.classList.remove('hidden');
+    async showCopilotSection() {
+        const section = document.getElementById('copilot-section');
+        section?.classList.remove('hidden');
+        
+        // Initialiser le Copilot authentifié si pas encore fait
+        if (!copilotAuthenticated.isInitialized) {
+            await copilotAuthenticated.initialize();
+        }
     }
 
     hideCopilotSection() {
