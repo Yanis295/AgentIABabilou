@@ -317,14 +317,15 @@ class App {
      * Gestion des clics sur les boutons
      */
     async handleSignInClick() {
-        try {
-            this.updateAuthStatus("Connexion en cours...");
-            await authManager.signIn(true); // Force l'interaction
-        } catch (error) {
-            console.error("Erreur lors de la connexion:", error);
-            this.showError("Erreur lors de la connexion: " + error.message);
-        }
+    try {
+        this.updateAuthStatus("Connexion en cours...");
+        // Utiliser la redirection au lieu de la popup
+        await authManager.signInRedirect();
+    } catch (error) {
+        console.error("Erreur lors de la connexion:", error);
+        this.showError("Erreur lors de la connexion: " + error.message);
     }
+}
 
     async handleSignOutClick() {
         try {

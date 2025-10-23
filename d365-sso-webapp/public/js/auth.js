@@ -172,8 +172,30 @@ class AuthManager {
     }
 
     /**
+     * Authentification par redirection (au lieu de popup)
+     * Utilisé quand les popups sont bloquées ou dans un iframe
+     */
+    async signInRedirect() {
+        try {
+            console.log("Redirection vers la page d'authentification...");
+            await this.msalInstance.loginRedirect(loginRequest);
+            // La page sera rechargée après l'authentification
+            return {
+                success: true
+            };
+        } catch (error) {
+            console.error("Erreur lors de l'authentification par redirection:", error);
+            this.triggerErrorCallbacks(error);
+            return {
+                success: false,
+                error: error
+            };
+        }
+    }
+
+    /**
      * Authentification automatique avec fallback
-     * Tente d'abord SSO silencieux, puis popup si nécessaire
+     * Utilise la REDIRECTION au lieu de popup (mieux pour les iframes)
      */
     async signIn(forceInteractive = false) {
         if (!this.isInitialized) {
@@ -181,9 +203,9 @@ class AuthManager {
             return { success: false, error: "MSAL not initialized" };
         }
 
-        // Si on force l'interaction, aller directement à la popup
+        // Si on force l'interaction, utiliser la redirection
         if (forceInteractive) {
-            return await this.signInPopup();
+            return await this.signInRedirect();
         }
 
         // Sinon, essayer d'abord l'authentification silencieuse
@@ -194,10 +216,10 @@ class AuthManager {
             return silentResult;
         }
 
-        // Si une interaction est requise, utiliser la popup
+        // Si une interaction est requise, utiliser la redirection
         if (silentResult.requiresInteraction) {
-            console.log("L'authentification silencieuse a échoué, utilisation de la popup...");
-            return await this.signInPopup();
+            console.log("L'authentification silencieuse a échoué, utilisation de la redirection...");
+            return await this.signInRedirect();
         }
 
         // Autre erreur
