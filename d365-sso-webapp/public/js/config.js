@@ -1,21 +1,20 @@
 /**
  * Configuration MSAL pour l'authentification Microsoft
- * Utilise les variables d'environnement pour la sécurité
  */
 
 const msalConfig = {
     auth: {
         // ID de l'application Azure AD (Application/Client ID)
-        clientId: window.ENV?.AZURE_CLIENT_ID || "6fa7c6ae-b7f2-4175-8e81-01af5bfdd48",
+        clientId: "6fa7c6ae-b7f2-4175-8e81-01af5bfdd48",
 
         // ID du tenant Azure AD (Directory/Tenant ID)
-        authority: `https://login.microsoftonline.com/${window.ENV?.AZURE_TENANT_ID || "da2a5e78-7185-44fd-9538-bfc593054289"}`,
+        authority: "https://login.microsoftonline.com/da2a5e78-7185-44fd-9538-bfc593054289",
 
         // URI de redirection après authentification
-        redirectUri: window.location.origin,
+        redirectUri: "https://red-sea-0552aa41e3.azurestaticapps.net",
 
         // URI de redirection après déconnexion
-        postLogoutRedirectUri: window.location.origin,
+        postLogoutRedirectUri: "https://red-sea-0552aa41e3.azurestaticapps.net",
 
         // Naviguer vers la page de login au lieu d'utiliser une popup
         navigateToLoginRequestUrl: false
