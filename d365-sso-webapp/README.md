@@ -137,12 +137,35 @@ const msalConfig = {
 
 **Pour plus de détails :** [docs/AZURE_SETUP.md](docs/AZURE_SETUP.md)
 
+## ☁️ Déploiement sur Azure Static Web Apps
+
+Cette application est optimisée pour Azure Static Web Apps qui offre :
+
+- **Déploiement automatique** depuis GitHub
+- **HTTPS gratuit** avec certificat SSL
+- **CDN global** pour des performances optimales
+- **Azure Functions intégrées** pour l'API backend
+- **Environnements de staging** pour chaque pull request
+
+### Déploiement rapide
+
+1. **Créez une Static Web App** dans le portail Azure
+2. **Connectez votre dépôt GitHub** lors de la création
+3. **Configurez les chemins** :
+   - App location: `/d365-sso-webapp/public`
+   - Api location: `/d365-sso-webapp/api`
+   - Output location: (laisser vide)
+4. Azure crée automatiquement un workflow GitHub Actions
+5. Le déploiement se fait automatiquement à chaque push
+
+**Guide complet :** [docs/AZURE_STATIC_WEB_APPS.md](docs/AZURE_STATIC_WEB_APPS.md)
+
 ## 🔗 Intégration dans Dynamics 365
 
-Une fois l'application fonctionnelle localement :
+Une fois l'application déployée :
 
-1. **Déployer l'application** sur un serveur HTTPS accessible
-2. **Mettre à jour les URIs** dans Azure AD avec l'URL de production
+1. **Mettre à jour les URIs** dans Azure AD avec l'URL de production
+2. **Configurer config.js** avec la nouvelle redirectUri
 3. **Intégrer dans D365** via un Web Resource ou iframe personnalisé
 
 **Guide complet :** [docs/D365_INTEGRATION.md](docs/D365_INTEGRATION.md)
@@ -196,6 +219,7 @@ npm test
 ## 📚 Documentation Complète
 
 - **[AZURE_SETUP.md](docs/AZURE_SETUP.md)** : Configuration détaillée d'Azure AD App Registration
+- **[AZURE_STATIC_WEB_APPS.md](docs/AZURE_STATIC_WEB_APPS.md)** : Déploiement sur Azure Static Web Apps
 - **[D365_INTEGRATION.md](docs/D365_INTEGRATION.md)** : Intégration complète dans Dynamics 365
 - **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** : Résolution des problèmes courants
 

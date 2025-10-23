@@ -36,3 +36,16 @@ build/
 *.pem
 *.key
 *.crt
+
+# Azure Functions
+api/node_modules/
+api/.funcignore
+local.settings.json
+__blobstorage__
+__queuestorage__
+__azurite_db*__.json
+.python_packages/
+
+# Azure Static Web Apps
+.azure/
+staticwebapp.config.json.backup

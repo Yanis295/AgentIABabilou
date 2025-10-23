@@ -1,0 +1,11 @@
+{
+  "name": "d365-sso-webapp-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API pour D365 SSO WebApp",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests specified yet\" && exit 0"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
