@@ -8,7 +8,7 @@ package-lock.json
 .env.production
 
 # Configuration sensible
-public/js/config.js
+#public/js/config.js
 
 # Logs
 logs
