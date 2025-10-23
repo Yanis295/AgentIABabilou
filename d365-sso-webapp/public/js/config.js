@@ -5,10 +5,10 @@
 const msalConfig = {
     auth: {
         // ID de l'application Azure AD (Application/Client ID)
-        clientId: "6fa7c6ae-b7f2-4175-8e81-01af5bfdd48",
+        clientId: "fa67c7ea-67f2-4175-9e81-01afd04d64f8",
 
         // ID du tenant Azure AD (Directory/Tenant ID)
-        authority: "https://login.microsoftonline.com/da2a5e78-7185-44fd-9538-bfc593054289",
+        authority: "https://login.microsoftonline.com/ee7b4ccb-8e30-435c-9368-1fce958df645",
 
         // URI de redirection après authentification
         redirectUri: "https://red-sea-0552aa41e3.azurestaticapps.net",
