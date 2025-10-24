@@ -64,12 +64,22 @@ class CopilotAuthenticated {
      */
     async getAccessToken() {
     try {
-        console.log("🔑 Récupération token via backend...");
+        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN ===");
+        console.log("📍 Étape 1: Obtenir token utilisateur Graph");
         
-        // Obtenir le token utilisateur (Graph)
-        const userToken = await authManager.getAccessToken();
+        // Obtenir le token utilisateur (Microsoft Graph)
+        const userToken = await authManager.getAccessToken(['user.read']);
         
-        // Échanger contre un token Power Platform via le backend
+        if (!userToken) {
+            throw new Error("Impossible d'obtenir le token utilisateur");
+        }
+        
+        console.log("✅ Token utilisateur obtenu");
+        console.log(`   Preview: ${userToken.substring(0, 50)}...`);
+        
+        console.log("📍 Étape 2: Appeler le backend pour échanger le token");
+        
+        // Appeler le backend pour échanger le token
         const response = await fetch('/api/get-powerplatform-token', {
             method: 'POST',
             headers: {
@@ -78,18 +88,39 @@ class CopilotAuthenticated {
             }
         });
 
+        console.log(`📡 Réponse backend: ${response.status} ${response.statusText}`);
+
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erreur backend');
+            const errorText = await response.text();
+            console.error("❌ Erreur backend:", errorText);
+            
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch {
+                errorData = { error: errorText };
+            }
+            
+            throw new Error(`Backend error ${response.status}: ${errorData.error || errorText}`);
         }
 
         const data = await response.json();
+        
+        if (!data.token) {
+            throw new Error("Le backend n'a pas retourné de token");
+        }
+        
         console.log("✅ Token Power Platform obtenu via backend");
+        console.log(`   Preview: ${data.token.substring(0, 50)}...`);
+        console.log(`   Expire: ${data.expiresOn}`);
         
         return data.token;
 
     } catch (error) {
-        console.error("❌ Erreur:", error);
+        console.error("❌ === ERREUR DÉTAILLÉE ===");
+        console.error("Message:", error.message);
+        console.error("Stack:", error.stack);
+        
         throw new Error("Impossible d'obtenir le token Power Platform");
     }
 }
