@@ -1,7 +1,8 @@
 {
   "name": "d365-sso-api",
   "version": "1.0.0",
-  "description": "API functions for Copilot integration",
+  "description": "API backend for D365 SSO Copilot integration",
+  "main": "index.js",
   "dependencies": {
     "@azure/msal-node": "^2.6.0"
   }

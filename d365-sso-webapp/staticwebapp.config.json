@@ -7,6 +7,10 @@
     {
       "route": "/*",
       "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": ["anonymous"]
     }
   ],
   "navigationFallback": {
@@ -15,7 +19,8 @@
   },
   "responseOverrides": {
     "404": {
-      "rewrite": "/index.html"
+      "rewrite": "/index.html",
+      "statusCode": 200
     }
   },
   "globalHeaders": {
