@@ -1,11 +1,8 @@
 {
-  "name": "d365-sso-webapp-api",
+  "name": "d365-sso-api",
   "version": "1.0.0",
-  "description": "Azure Functions API pour D365 SSO WebApp",
-  "scripts": {
-    "start": "func start",
-    "test": "echo \"No tests specified yet\" && exit 0"
-  },
-  "dependencies": {},
-  "devDependencies": {}
+  "description": "API functions for Copilot integration",
+  "dependencies": {
+    "@azure/msal-node": "^2.6.0"
+  }
 }

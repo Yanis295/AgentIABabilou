@@ -64,61 +64,72 @@ class CopilotAuthenticated {
      */
     async getAccessToken() {
     try {
-        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN ===");
+        console.log("🔑 Récupération token via backend...");
         
-        // Liste des scopes à essayer
-        const scopeAttempts = [
-            {
-                name: 'Dynamics CRM user_impersonation',
-                scopes: ['https://org.crm.dynamics.com/user_impersonation']
-            },
-            {
-                name: 'Dynamics CRM default',
-                scopes: ['https://org.crm.dynamics.com/.default']
-            },
-            {
-                name: 'Power Platform',
-                scopes: ['https://api.powerplatform.com/.default']
-            },
-            {
-                name: 'Microsoft Graph',
-                scopes: ['user.read']
+        // Obtenir le token utilisateur (Graph)
+        const userToken = await authManager.getAccessToken();
+        
+        // Échanger contre un token Power Platform via le backend
+        const response = await fetch('/api/get-powerplatform-token', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${userToken}`,
+                'Content-Type': 'application/json'
             }
-        ];
+        });
 
-        // Essayer chaque scope
-        for (const attempt of scopeAttempts) {
-            try {
-                console.log(`📡 Tentative avec "${attempt.name}"`);
-                console.log(`   Scopes: ${JSON.stringify(attempt.scopes)}`);
-                
-                const token = await authManager.getAccessToken(attempt.scopes);
-                
-                if (token) {
-                    console.log(`✅ TOKEN OBTENU avec "${attempt.name}"`);
-                    console.log(`   Token (preview): ${token.substring(0, 50)}...`);
-                    return token;
-                }
-                
-                console.log(`⚠️ Token vide pour "${attempt.name}"`);
-                
-            } catch (error) {
-                console.error(`❌ Échec avec "${attempt.name}":`, {
-                    message: error.message,
-                    errorCode: error.errorCode,
-                    errorMessage: error.errorMessage,
-                    stack: error.stack
-                });
-                // Continuer avec le scope suivant
-            }
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Erreur backend');
         }
 
-        console.error("❌ === AUCUN TOKEN OBTENU ===");
-        throw new Error("Impossible d'obtenir un token avec aucun des scopes disponibles");
+        const data = await response.json();
+        console.log("✅ Token Power Platform obtenu via backend");
+        
+        return data.token;
 
     } catch (error) {
-        console.error("❌ Erreur critique:", error);
-        throw new Error("Impossible d'obtenir le token d'accès");
+        console.error("❌ Erreur:", error);
+        throw new Error("Impossible d'obtenir le token Power Platform");
+    }
+}
+
+debugToken(token) {
+    try {
+        const payload = token.split('.')[1];
+        const decoded = JSON.parse(atob(payload));
+        
+        console.log("🔍 Token info:", {
+            audience: decoded.aud,
+            scopes: decoded.scp,
+            issuer: decoded.iss,
+            expires: new Date(decoded.exp * 1000).toLocaleString()
+        });
+        
+    } catch (error) {
+        console.warn("Impossible de décoder:", error);
+    }
+}
+
+
+/**
+ * Debug: Décoder le token JWT pour vérifier l'audience
+ */
+debugToken(token) {
+    try {
+        // Décoder le payload du JWT (partie entre les deux points)
+        const payload = token.split('.')[1];
+        const decoded = JSON.parse(atob(payload));
+        
+        console.log("🔍 Token décodé:", {
+            audience: decoded.aud,
+            issuer: decoded.iss,
+            scopes: decoded.scp,
+            expiresAt: new Date(decoded.exp * 1000).toISOString()
+        });
+        
+    } catch (error) {
+        console.warn("⚠️ Impossible de décoder le token:", error);
     }
 }
 
