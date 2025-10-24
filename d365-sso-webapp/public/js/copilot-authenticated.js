@@ -63,27 +63,64 @@ class CopilotAuthenticated {
      * Obtient un token d'accès pour Power Platform
      */
     async getAccessToken() {
-        try {
-            // Demander un token avec le scope Power Platform
-            const scopes = [
-                `${this.config.apiEndpoint}/.default`
-            ];
+    try {
+        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN ===");
+        
+        // Liste des scopes à essayer
+        const scopeAttempts = [
+            {
+                name: 'Dynamics CRM user_impersonation',
+                scopes: ['https://org.crm.dynamics.com/user_impersonation']
+            },
+            {
+                name: 'Dynamics CRM default',
+                scopes: ['https://org.crm.dynamics.com/.default']
+            },
+            {
+                name: 'Power Platform',
+                scopes: ['https://api.powerplatform.com/.default']
+            },
+            {
+                name: 'Microsoft Graph',
+                scopes: ['user.read']
+            }
+        ];
 
-            const token = await authManager.getAccessToken(scopes);
-            return token;
-
-        } catch (error) {
-            console.error("Erreur lors de l'obtention du token:", error);
-            
-            // Fallback : essayer avec le token Microsoft Graph
+        // Essayer chaque scope
+        for (const attempt of scopeAttempts) {
             try {
-                console.log("Tentative avec le token Graph...");
-                return await authManager.getAccessToken();
-            } catch (fallbackError) {
-                throw new Error("Impossible d'obtenir un token d'accès");
+                console.log(`📡 Tentative avec "${attempt.name}"`);
+                console.log(`   Scopes: ${JSON.stringify(attempt.scopes)}`);
+                
+                const token = await authManager.getAccessToken(attempt.scopes);
+                
+                if (token) {
+                    console.log(`✅ TOKEN OBTENU avec "${attempt.name}"`);
+                    console.log(`   Token (preview): ${token.substring(0, 50)}...`);
+                    return token;
+                }
+                
+                console.log(`⚠️ Token vide pour "${attempt.name}"`);
+                
+            } catch (error) {
+                console.error(`❌ Échec avec "${attempt.name}":`, {
+                    message: error.message,
+                    errorCode: error.errorCode,
+                    errorMessage: error.errorMessage,
+                    stack: error.stack
+                });
+                // Continuer avec le scope suivant
             }
         }
+
+        console.error("❌ === AUCUN TOKEN OBTENU ===");
+        throw new Error("Impossible d'obtenir un token avec aucun des scopes disponibles");
+
+    } catch (error) {
+        console.error("❌ Erreur critique:", error);
+        throw new Error("Impossible d'obtenir le token d'accès");
     }
+}
 
     /**
      * Crée une conversation avec le bot
