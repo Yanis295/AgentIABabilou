@@ -64,20 +64,26 @@ class CopilotAuthenticated {
      */
     async getAccessToken() {
     try {
-        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN ===");
-        console.log("📍 Étape 1: Obtenir token utilisateur Graph");
+        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN OBO ===");
+        console.log("📍 Étape 1: Obtenir token pour votre API (OBO)");
+        console.log("   Scope: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user");
         
-        // Obtenir le token utilisateur (Microsoft Graph)
-        const userToken = await authManager.getAccessToken(['user.read']);
+        // CRITIQUE : Demander le token pour VOTRE API, pas Graph
+        const userToken = await authManager.getAccessToken([
+            'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
+        ]);
         
         if (!userToken) {
-            throw new Error("Impossible d'obtenir le token utilisateur");
+            throw new Error("Impossible d'obtenir le token API");
         }
         
-        console.log("✅ Token utilisateur obtenu");
+        console.log("✅ Token API obtenu");
         console.log(`   Preview: ${userToken.substring(0, 50)}...`);
         
-        console.log("📍 Étape 2: Appeler le backend pour échanger le token");
+        // Debug : Décoder pour vérifier
+        this.debugToken(userToken);
+        
+        console.log("📍 Étape 2: Échanger le token via le backend (OBO)");
         
         // Appeler le backend pour échanger le token
         const response = await fetch('/api/get-powerplatform-token', {
@@ -101,7 +107,7 @@ class CopilotAuthenticated {
                 errorData = { error: errorText };
             }
             
-            throw new Error(`Backend error ${response.status}: ${errorData.error || errorText}`);
+            throw new Error(`Backend error ${response.status}: ${JSON.stringify(errorData)}`);
         }
 
         const data = await response.json();
@@ -120,6 +126,13 @@ class CopilotAuthenticated {
         console.error("❌ === ERREUR DÉTAILLÉE ===");
         console.error("Message:", error.message);
         console.error("Stack:", error.stack);
+        
+        // Aide au debugging
+        if (error.message.includes('AADSTS5002730')) {
+            console.error("💡 AADSTS5002730 = Mauvais token envoyé au backend");
+            console.error("   Le token doit avoir l'audience: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8");
+            console.error("   Pas: https://graph.microsoft.com");
+        }
         
         throw new Error("Impossible d'obtenir le token Power Platform");
     }
@@ -148,16 +161,23 @@ debugToken(token) {
  */
 debugToken(token) {
     try {
-        // Décoder le payload du JWT (partie entre les deux points)
         const payload = token.split('.')[1];
         const decoded = JSON.parse(atob(payload));
         
-        console.log("🔍 Token décodé:", {
-            audience: decoded.aud,
-            issuer: decoded.iss,
-            scopes: decoded.scp,
-            expiresAt: new Date(decoded.exp * 1000).toISOString()
-        });
+        console.log("🔍 Token décodé:");
+        console.log("   Audience (aud):", decoded.aud);
+        console.log("   Scopes (scp):", decoded.scp);
+        console.log("   Version (ver):", decoded.ver);
+        console.log("   Expire:", new Date(decoded.exp * 1000).toLocaleString());
+        
+        // Vérification critique
+        if (decoded.aud && decoded.aud.includes('fa67c7ea-67f2-4175-9e81-01afd04d64f8')) {
+            console.log("   ✅ Audience correcte pour OBO !");
+        } else {
+            console.error("   ❌ ATTENTION : Mauvaise audience !");
+            console.error("      Actuelle:", decoded.aud);
+            console.error("      Attendue: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8");
+        }
         
     } catch (error) {
         console.warn("⚠️ Impossible de décoder le token:", error);
