@@ -42,12 +42,24 @@ module.exports = async function (context, req) {
         });
 
         // Vérification critique de l'audience
-        if (!tokenPayload.aud || !tokenPayload.aud.includes(process.env.AZURE_CLIENT_ID)) {
+        // Accepter soit le Client ID directement, soit avec le préfixe api://
+        const expectedAudiences = [
+            process.env.AZURE_CLIENT_ID,
+            `api://${process.env.AZURE_CLIENT_ID}`
+        ];
+        
+        const audienceMatches = expectedAudiences.some(aud => 
+            tokenPayload.aud === aud || tokenPayload.aud.includes(aud)
+        );
+        
+        if (!tokenPayload.aud || !audienceMatches) {
             context.log.error('❌ ERREUR: Mauvaise audience dans le token');
-            context.log.error('   Attendue:', `api://${process.env.AZURE_CLIENT_ID}`);
+            context.log.error('   Attendue:', expectedAudiences);
             context.log.error('   Reçue:', tokenPayload.aud);
             throw new Error('Token avec une audience incorrecte. Le token doit être destiné à cette API.');
         }
+        
+        context.log('✅ Audience validée:', tokenPayload.aud);
 
         // 2. Configuration MSAL pour OBO
         const confidentialClientConfig = {
