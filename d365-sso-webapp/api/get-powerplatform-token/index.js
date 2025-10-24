@@ -37,6 +37,7 @@ module.exports = async function (context, req) {
         const tokenPayload = JSON.parse(Buffer.from(userToken.split('.')[1], 'base64').toString());
         context.log('🔍 Token info:', {
             audience: tokenPayload.aud,
+            audienceType: typeof tokenPayload.aud,
             scopes: tokenPayload.scp,
             issuer: tokenPayload.iss
         });
@@ -48,18 +49,32 @@ module.exports = async function (context, req) {
             `api://${process.env.AZURE_CLIENT_ID}`
         ];
         
-        const audienceMatches = expectedAudiences.some(aud => 
-            tokenPayload.aud === aud || tokenPayload.aud.includes(aud)
-        );
+        context.log('🔍 Expected audiences:', expectedAudiences);
+        context.log('🔍 AZURE_CLIENT_ID from env:', process.env.AZURE_CLIENT_ID);
         
-        if (!tokenPayload.aud || !audienceMatches) {
+        // Normaliser l'audience (gérer tableau ou string)
+        const tokenAudience = Array.isArray(tokenPayload.aud) 
+            ? tokenPayload.aud[0] 
+            : tokenPayload.aud;
+            
+        context.log('🔍 Token audience (normalized):', tokenAudience);
+        
+        const audienceMatches = expectedAudiences.some(expectedAud => {
+            const matches = tokenAudience === expectedAud || 
+                           (tokenAudience && tokenAudience.includes && tokenAudience.includes(expectedAud));
+            context.log(`🔍 Comparing '${tokenAudience}' with '${expectedAud}': ${matches}`);
+            return matches;
+        });
+        
+        if (!tokenAudience || !audienceMatches) {
             context.log.error('❌ ERREUR: Mauvaise audience dans le token');
-            context.log.error('   Attendue:', expectedAudiences);
-            context.log.error('   Reçue:', tokenPayload.aud);
+            context.log.error('   Attendue (l\'une de):', expectedAudiences);
+            context.log.error('   Reçue:', tokenAudience);
+            context.log.error('   Type:', typeof tokenAudience);
             throw new Error('Token avec une audience incorrecte. Le token doit être destiné à cette API.');
         }
         
-        context.log('✅ Audience validée:', tokenPayload.aud);
+        context.log('✅ Audience validée:', tokenAudience);
 
         // 2. Configuration MSAL pour OBO
         const confidentialClientConfig = {
