@@ -1,6 +1,8 @@
 /**
- * Intégration Copilot avec authentification Microsoft
- * Utilise Microsoft 365 Agents SDK
+ * Intégration Copilot SANS backend OBO
+ * Appel DIRECT à Power Platform depuis le frontend
+ * 
+ * PLUS SIMPLE mais nécessite d'ajouter les permissions Power Platform dans Azure AD
  */
 
 class CopilotAuthenticated {
@@ -22,167 +24,123 @@ class CopilotAuthenticated {
      */
     async initialize() {
         try {
-            console.log("🤖 Initialisation du Copilot avec authentification Microsoft...");
+            console.log("🤖 === INITIALISATION COPILOT (DIRECT) ===");
 
-            // Vérifier que Web Chat SDK est chargé
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
             }
 
-            // Vérifier que l'utilisateur est connecté
             if (!authManager.isSignedIn()) {
-                throw new Error("Utilisateur non connecté. Veuillez vous connecter d'abord.");
+                throw new Error("Utilisateur non connecté");
             }
 
-            // Obtenir le token d'accès
+            console.log("✅ Web Chat SDK chargé");
+            console.log("✅ Utilisateur connecté");
+
+            // Obtenir le token Power Platform DIRECTEMENT
             const accessToken = await this.getAccessToken();
             if (!accessToken) {
-                throw new Error("Impossible d'obtenir le token d'accès");
+                throw new Error("Impossible d'obtenir le token Power Platform");
             }
 
-            console.log("✅ Token d'accès obtenu");
+            console.log("✅ Token Power Platform obtenu");
 
             // Créer une conversation avec le bot
             await this.createConversation(accessToken);
-
             console.log("✅ Conversation créée:", this.conversationId);
 
             // Initialiser le Web Chat
             await this.initializeWebChat(accessToken);
 
             this.isInitialized = true;
-            console.log("✅ Copilot initialisé avec succès");
+            console.log("✅ === COPILOT INITIALISÉ AVEC SUCCÈS ===");
 
         } catch (error) {
-            console.error("❌ Erreur lors de l'initialisation du Copilot:", error);
+            console.error("❌ === ERREUR INITIALISATION COPILOT ===");
+            console.error(error);
             this.showError(error.message);
         }
     }
 
     /**
-     * Obtient un token d'accès pour Power Platform
+     * Obtient un token Power Platform DIRECTEMENT (sans backend)
      */
     async getAccessToken() {
-    try {
-        console.log("🔑 === DÉBUT RÉCUPÉRATION TOKEN OBO ===");
-        console.log("📍 Étape 1: Obtenir token pour votre API (OBO)");
-        console.log("   Scope: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user");
-        
-        // CRITIQUE : Demander le token pour VOTRE API, pas Graph
-        const userToken = await authManager.getAccessToken([
-            'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
-        ]);
-        
-        if (!userToken) {
-            throw new Error("Impossible d'obtenir le token API");
-        }
-        
-        console.log("✅ Token API obtenu");
-        console.log(`   Preview: ${userToken.substring(0, 50)}...`);
-        
-        // Debug : Décoder pour vérifier
-        this.debugToken(userToken);
-        
-        console.log("📍 Étape 2: Échanger le token via le backend (OBO)");
-        
-        // Appeler le backend pour échanger le token
-        const response = await fetch('/api/get-powerplatform-token', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${userToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        console.log(`📡 Réponse backend: ${response.status} ${response.statusText}`);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("❌ Erreur backend:", errorText);
+        try {
+            console.log("🔑 === RÉCUPÉRATION TOKEN POWER PLATFORM (DIRECT) ===");
+            console.log("📍 Demande directe du token Power Platform");
+            console.log("   Scope: https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com/.default");
             
-            let errorData;
-            try {
-                errorData = JSON.parse(errorText);
-            } catch {
-                errorData = { error: errorText };
+            // Demander DIRECTEMENT le token pour Power Platform
+            const powerPlatformToken = await authManager.getAccessToken([
+                'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com/.default'
+            ]);
+            
+            if (!powerPlatformToken) {
+                throw new Error("Impossible d'obtenir le token Power Platform");
             }
             
-            throw new Error(`Backend error ${response.status}: ${JSON.stringify(errorData)}`);
-        }
+            console.log("✅ Token Power Platform obtenu directement !");
+            console.log(`   Preview: ${powerPlatformToken.substring(0, 50)}...`);
+            
+            // Debug : vérifier l'audience
+            this.debugToken(powerPlatformToken);
+            
+            console.log("✅ === FIN RÉCUPÉRATION TOKEN - SUCCÈS ===");
+            
+            return powerPlatformToken;
 
-        const data = await response.json();
-        
-        if (!data.token) {
-            throw new Error("Le backend n'a pas retourné de token");
+        } catch (error) {
+            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN ===");
+            console.error("Message:", error.message);
+            console.error("Stack:", error.stack);
+            
+            // Messages d'aide
+            if (error.message && error.message.includes('AADSTS65001')) {
+                console.error("💡 AADSTS65001 = Permissions manquantes");
+                console.error("   Solution:");
+                console.error("   1. Azure AD → App Registration → API permissions");
+                console.error("   2. Ajoutez 'Dataverse' ou 'PowerApps-Advisor'");
+                console.error("   3. Sélectionnez 'user_impersonation'");
+                console.error("   4. Accordez le consentement administrateur");
+            } else if (error.message && error.message.includes('Interaction')) {
+                console.error("💡 Interaction requise");
+                console.error("   L'utilisateur doit donner son consentement");
+                console.error("   Une popup va s'ouvrir...");
+            }
+            
+            throw new Error(`Impossible d'obtenir le token Power Platform: ${error.message}`);
         }
-        
-        console.log("✅ Token Power Platform obtenu via backend");
-        console.log(`   Preview: ${data.token.substring(0, 50)}...`);
-        console.log(`   Expire: ${data.expiresOn}`);
-        
-        return data.token;
-
-    } catch (error) {
-        console.error("❌ === ERREUR DÉTAILLÉE ===");
-        console.error("Message:", error.message);
-        console.error("Stack:", error.stack);
-        
-        // Aide au debugging
-        if (error.message.includes('AADSTS5002730')) {
-            console.error("💡 AADSTS5002730 = Mauvais token envoyé au backend");
-            console.error("   Le token doit avoir l'audience: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8");
-            console.error("   Pas: https://graph.microsoft.com");
-        }
-        
-        throw new Error("Impossible d'obtenir le token Power Platform");
     }
-}
 
-debugToken(token) {
-    try {
-        const payload = token.split('.')[1];
-        const decoded = JSON.parse(atob(payload));
-        
-        console.log("🔍 Token info:", {
-            audience: decoded.aud,
-            scopes: decoded.scp,
-            issuer: decoded.iss,
-            expires: new Date(decoded.exp * 1000).toLocaleString()
-        });
-        
-    } catch (error) {
-        console.warn("Impossible de décoder:", error);
-    }
-}
-
-
-/**
- * Debug: Décoder le token JWT pour vérifier l'audience
- */
-debugToken(token) {
-    try {
-        const payload = token.split('.')[1];
-        const decoded = JSON.parse(atob(payload));
-        
-        console.log("🔍 Token décodé:");
-        console.log("   Audience (aud):", decoded.aud);
-        console.log("   Scopes (scp):", decoded.scp);
-        console.log("   Version (ver):", decoded.ver);
-        console.log("   Expire:", new Date(decoded.exp * 1000).toLocaleString());
-        
-        // Vérification critique
-        if (decoded.aud && decoded.aud.includes('fa67c7ea-67f2-4175-9e81-01afd04d64f8')) {
-            console.log("   ✅ Audience correcte pour OBO !");
-        } else {
-            console.error("   ❌ ATTENTION : Mauvaise audience !");
-            console.error("      Actuelle:", decoded.aud);
-            console.error("      Attendue: api://fa67c7ea-67f2-4175-9e81-01afd04d64f8");
+    /**
+     * Debug : Décoder et vérifier le token JWT
+     */
+    debugToken(token) {
+        try {
+            const payload = token.split('.')[1];
+            const decoded = JSON.parse(atob(payload));
+            
+            console.log("🔍 === ANALYSE DU TOKEN ===");
+            console.log("   Audience (aud):", decoded.aud);
+            console.log("   Scopes (scp):", decoded.scp);
+            console.log("   Issuer (iss):", decoded.iss);
+            console.log("   Version (ver):", decoded.ver);
+            console.log("   Expire:", new Date(decoded.exp * 1000).toLocaleString());
+            
+            // Vérifier que c'est bien un token Power Platform
+            if (decoded.aud && decoded.aud.includes('powerplatform.com')) {
+                console.log("   ✅ TOKEN POWER PLATFORM VALIDE !");
+            } else {
+                console.warn("   ⚠️ Audience inattendue:", decoded.aud);
+            }
+            
+            console.log("=========================");
+            
+        } catch (error) {
+            console.warn("⚠️ Impossible de décoder le token:", error);
         }
-        
-    } catch (error) {
-        console.warn("⚠️ Impossible de décoder le token:", error);
     }
-}
 
     /**
      * Crée une conversation avec le bot
@@ -195,6 +153,7 @@ debugToken(token) {
             });
 
             console.log("📞 Création de la conversation...");
+            console.log("   URL:", `${conversationUrl}?${params}`);
 
             const response = await fetch(`${conversationUrl}?${params}`, {
                 method: 'POST',
@@ -210,7 +169,7 @@ debugToken(token) {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error("Erreur API:", response.status, errorText);
+                console.error("❌ Erreur API:", response.status, errorText);
                 throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
             }
 
@@ -218,9 +177,10 @@ debugToken(token) {
             this.conversationId = data.conversationId;
 
             console.log("✅ Conversation créée avec succès");
+            console.log("   Conversation ID:", this.conversationId);
 
         } catch (error) {
-            console.error("Erreur lors de la création de la conversation:", error);
+            console.error("❌ Erreur lors de la création de la conversation:", error);
             throw error;
         }
     }
@@ -230,13 +190,11 @@ debugToken(token) {
      */
     async initializeWebChat(accessToken) {
         try {
-            // Créer un adaptateur personnalisé pour Power Platform
+            console.log("🎨 Initialisation du Web Chat...");
+            
             const directLine = this.createPowerPlatformAdapter(accessToken);
-
-            // Obtenir les informations utilisateur
             const account = authManager.getAccount();
 
-            // Configuration du style
             const styleOptions = {
                 accent: '#0078d4',
                 backgroundColor: 'White',
@@ -256,7 +214,6 @@ debugToken(token) {
                 sendBoxTextColor: '#000000'
             };
 
-            // Rendre Web Chat
             window.WebChat.renderWebChat(
                 {
                     directLine: directLine,
@@ -271,7 +228,7 @@ debugToken(token) {
             console.log("✅ Web Chat initialisé");
 
         } catch (error) {
-            console.error("Erreur lors de l'initialisation du Web Chat:", error);
+            console.error("❌ Erreur lors de l'initialisation du Web Chat:", error);
             throw error;
         }
     }
@@ -282,7 +239,9 @@ debugToken(token) {
     createPowerPlatformAdapter(accessToken) {
         const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations/${this.conversationId}`;
         
-        // Utiliser l'adaptateur Direct Line avec l'URL personnalisée
+        console.log("🔌 Création de l'adaptateur Direct Line");
+        console.log("   URL:", conversationUrl);
+        
         return window.WebChat.createDirectLine({
             domain: conversationUrl,
             token: accessToken,
@@ -315,13 +274,17 @@ debugToken(token) {
                         <p style="margin: 0; font-size: 0.9rem;">${message}</p>
                     </div>
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
-                        <p style="margin: 0;"><strong>Suggestions :</strong></p>
+                        <p style="margin: 0;"><strong>Solutions possibles :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Vérifiez que vous êtes bien connecté</li>
+                            <li>Vérifiez que les permissions Power Platform sont ajoutées dans Azure AD</li>
+                            <li>Accordez le consentement administrateur pour ces permissions</li>
+                            <li>Vérifiez la console (F12) pour plus de détails</li>
                             <li>Rechargez la page</li>
-                            <li>Contactez le support si le problème persiste</li>
                         </ul>
                     </div>
+                    <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Recharger la page
+                    </button>
                 </div>
             `;
         }
