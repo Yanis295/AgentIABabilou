@@ -1,6 +1,6 @@
 /**
- * Intégration Copilot avec environnement Power Platform spécifique
- * VERSION CORRIGÉE - Utilise l'URL de l'environnement directement
+ * Intégration Copilot avec authentification via Azure Function OBO
+ * VERSION OBO - Utilise une Azure Function backend pour l'échange de token
  */
 
 class CopilotAuthenticated {
@@ -14,8 +14,8 @@ class CopilotAuthenticated {
             botId: 'cr288_chatbotAgentIaBabilou',
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
             apiVersion: '2022-03-01-preview',
-            // Scope Power Platform spécifique à votre environnement
-            powerPlatformScope: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com/.default'
+            // URL de l'Azure Function pour l'échange OBO
+            oboEndpoint: '/api/get-powerplatform-token'
         };
     }
 
@@ -24,7 +24,7 @@ class CopilotAuthenticated {
      */
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (POWER PLATFORM) ===");
+            console.log("🤖 === INITIALISATION COPILOT (OBO FLOW) ===");
 
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
@@ -37,13 +37,13 @@ class CopilotAuthenticated {
             console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            // Obtenir le token Power Platform
-            const accessToken = await this.getAccessToken();
+            // Obtenir le token Power Platform via OBO
+            const accessToken = await this.getAccessTokenViaOBO();
             if (!accessToken) {
                 throw new Error("Impossible d'obtenir le token Power Platform");
             }
 
-            console.log("✅ Token Power Platform obtenu");
+            console.log("✅ Token Power Platform obtenu via OBO");
 
             // Créer une conversation avec le bot
             await this.createConversation(accessToken);
@@ -63,35 +63,63 @@ class CopilotAuthenticated {
     }
 
     /**
-     * Obtient un token Power Platform pour votre environnement
+     * Obtient un token Power Platform via l'Azure Function OBO
      */
-    async getAccessToken() {
+    async getAccessTokenViaOBO() {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN POWER PLATFORM ===");
-            console.log("📍 Scope:", this.config.powerPlatformScope);
-            console.log("📍 Endpoint:", this.config.apiEndpoint);
+            console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO ===");
+            console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
-            // Demander le token pour votre environnement Power Platform spécifique
-            const ppToken = await authManager.getAccessToken([
-                this.config.powerPlatformScope
-            ]);
+            // 1. Obtenir le token utilisateur Graph
+            console.log("⏳ Récupération du token utilisateur...");
+            const userToken = await authManager.getAccessToken(['user.read']);
             
-            if (!ppToken) {
-                throw new Error("Impossible d'obtenir le token Power Platform");
+            if (!userToken) {
+                throw new Error("Impossible d'obtenir le token utilisateur");
             }
             
-            console.log("✅ Token Power Platform obtenu !");
-            console.log(`   Preview: ${ppToken.substring(0, 50)}...`);
+            console.log("✅ Token utilisateur obtenu");
+            console.log(`   Preview: ${userToken.substring(0, 50)}...`);
+            
+            // 2. Appeler l'Azure Function pour échanger le token
+            console.log("⏳ Appel à l'Azure Function OBO...");
+            
+            const response = await fetch(this.config.oboEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${userToken}`
+                }
+            });
+
+            console.log("📡 Réponse reçue:", response.status, response.statusText);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error("❌ Erreur API:", errorData);
+                throw new Error(errorData.error || `Erreur HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            if (!data.success || !data.token) {
+                throw new Error("Réponse OBO invalide");
+            }
+
+            console.log("✅ Token Power Platform reçu !");
+            console.log("   Scopes:", data.scopes);
+            console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
+            console.log(`   Preview: ${data.token.substring(0, 50)}...`);
             
             // Debug : vérifier l'audience
-            this.debugToken(ppToken);
+            this.debugToken(data.token);
             
-            console.log("✅ === FIN RÉCUPÉRATION TOKEN - SUCCÈS ===");
+            console.log("✅ === FIN RÉCUPÉRATION TOKEN OBO - SUCCÈS ===");
             
-            return ppToken;
+            return data.token;
 
         } catch (error) {
-            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN ===");
+            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN OBO ===");
             console.error("Type:", error.constructor.name);
             console.error("Message:", error.message);
             
@@ -100,19 +128,13 @@ class CopilotAuthenticated {
             }
             
             // Messages d'aide selon l'erreur
-            if (error.message && error.message.includes('AADSTS65001')) {
-                console.error("💡 AADSTS65001 = Permissions manquantes");
-                console.error("   Vérifiez dans Azure AD → API permissions:");
-                console.error("   - API: Power Platform / Dataverse");
-                console.error("   - Permission: user_impersonation");
-                console.error("   - Consentement admin accordé ✅");
-            } else if (error.message && error.message.includes('AADSTS500011')) {
-                console.error("💡 AADSTS500011 = Resource not found");
-                console.error("   L'environnement Power Platform n'est pas reconnu");
-                console.error("   Vérifiez que vous avez ajouté l'API dans Azure AD");
-            } else if (error.message && error.message.includes('Interaction')) {
-                console.error("💡 Interaction requise");
-                console.error("   Une popup va s'ouvrir pour le consentement");
+            if (error.message.includes('Failed to fetch')) {
+                console.error("💡 Erreur réseau");
+                console.error("   Vérifiez que l'Azure Function est déployée");
+                console.error("   URL:", window.location.origin + this.config.oboEndpoint);
+            } else if (error.message.includes('AADSTS')) {
+                console.error("💡 Erreur Azure AD");
+                console.error("   Vérifiez les permissions et le client secret");
             }
             
             throw new Error(`Impossible d'obtenir le token: ${error.message}`);
@@ -127,7 +149,7 @@ class CopilotAuthenticated {
             const payload = token.split('.')[1];
             const decoded = JSON.parse(atob(payload));
             
-            console.log("🔍 === ANALYSE DU TOKEN ===");
+            console.log("🔍 === ANALYSE DU TOKEN POWER PLATFORM ===");
             console.log("   Audience (aud):", decoded.aud);
             console.log("   Scopes (scp):", decoded.scp || decoded.roles);
             console.log("   Issuer (iss):", decoded.iss);
@@ -146,7 +168,7 @@ class CopilotAuthenticated {
                 }
             }
             
-            console.log("=========================");
+            console.log("=================================================");
             
         } catch (error) {
             console.warn("⚠️ Impossible de décoder le token:", error);
@@ -287,10 +309,11 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Azure AD → API permissions → Power Platform → user_impersonation ✅</li>
-                            <li>Consentement administrateur accordé ✅</li>
-                            <li>L'environnement Power Platform est bien enregistré dans Azure AD</li>
-                            <li>Vérifiez la console (F12) pour les détails</li>
+                            <li>Variables d'environnement configurées dans Azure Static Web App ✅</li>
+                            <li>Client Secret valide et non expiré</li>
+                            <li>Azure Function déployée</li>
+                            <li>Permissions API accordées avec consentement admin</li>
+                            <li>Vérifiez la console (F12) et les logs Azure Function</li>
                         </ul>
                     </div>
                     <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
