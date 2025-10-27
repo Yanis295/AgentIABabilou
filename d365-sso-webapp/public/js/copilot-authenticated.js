@@ -1,6 +1,6 @@
 /**
- * Intégration Copilot avec URL CRM générique
- * VERSION FINALE - Utilise https://dynamicscrm.azure.com
+ * Intégration Copilot avec environnement Power Platform spécifique
+ * VERSION CORRIGÉE - Utilise l'URL de l'environnement directement
  */
 
 class CopilotAuthenticated {
@@ -14,8 +14,8 @@ class CopilotAuthenticated {
             botId: 'cr288_chatbotAgentIaBabilou',
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
             apiVersion: '2022-03-01-preview',
-            // URL générique Dynamics CRM (fonctionne pour tous les tenants)
-            crmScope: 'https://dynamicscrm.azure.com/.default'
+            // Scope Power Platform spécifique à votre environnement
+            powerPlatformScope: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com/.default'
         };
     }
 
@@ -24,7 +24,7 @@ class CopilotAuthenticated {
      */
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (DYNAMICS CRM) ===");
+            console.log("🤖 === INITIALISATION COPILOT (POWER PLATFORM) ===");
 
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
@@ -37,13 +37,13 @@ class CopilotAuthenticated {
             console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            // Obtenir le token Dynamics CRM
+            // Obtenir le token Power Platform
             const accessToken = await this.getAccessToken();
             if (!accessToken) {
-                throw new Error("Impossible d'obtenir le token Dynamics CRM");
+                throw new Error("Impossible d'obtenir le token Power Platform");
             }
 
-            console.log("✅ Token Dynamics CRM obtenu");
+            console.log("✅ Token Power Platform obtenu");
 
             // Créer une conversation avec le bot
             await this.createConversation(accessToken);
@@ -63,32 +63,32 @@ class CopilotAuthenticated {
     }
 
     /**
-     * Obtient un token Dynamics CRM avec l'URL générique
+     * Obtient un token Power Platform pour votre environnement
      */
     async getAccessToken() {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN DYNAMICS CRM ===");
-            console.log("📍 Scope:", this.config.crmScope);
-            console.log("   (URL générique qui fonctionne pour tous les tenants)");
+            console.log("🔑 === RÉCUPÉRATION TOKEN POWER PLATFORM ===");
+            console.log("📍 Scope:", this.config.powerPlatformScope);
+            console.log("📍 Endpoint:", this.config.apiEndpoint);
             
-            // Demander le token pour Dynamics CRM avec le scope générique
-            const crmToken = await authManager.getAccessToken([
-                this.config.crmScope
+            // Demander le token pour votre environnement Power Platform spécifique
+            const ppToken = await authManager.getAccessToken([
+                this.config.powerPlatformScope
             ]);
             
-            if (!crmToken) {
-                throw new Error("Impossible d'obtenir le token Dynamics CRM");
+            if (!ppToken) {
+                throw new Error("Impossible d'obtenir le token Power Platform");
             }
             
-            console.log("✅ Token Dynamics CRM obtenu !");
-            console.log(`   Preview: ${crmToken.substring(0, 50)}...`);
+            console.log("✅ Token Power Platform obtenu !");
+            console.log(`   Preview: ${ppToken.substring(0, 50)}...`);
             
             // Debug : vérifier l'audience
-            this.debugToken(crmToken);
+            this.debugToken(ppToken);
             
             console.log("✅ === FIN RÉCUPÉRATION TOKEN - SUCCÈS ===");
             
-            return crmToken;
+            return ppToken;
 
         } catch (error) {
             console.error("❌ === ERREUR RÉCUPÉRATION TOKEN ===");
@@ -103,13 +103,13 @@ class CopilotAuthenticated {
             if (error.message && error.message.includes('AADSTS65001')) {
                 console.error("💡 AADSTS65001 = Permissions manquantes");
                 console.error("   Vérifiez dans Azure AD → API permissions:");
-                console.error("   - Dynamics CRM");
-                console.error("   - user_impersonation");
+                console.error("   - API: Power Platform / Dataverse");
+                console.error("   - Permission: user_impersonation");
                 console.error("   - Consentement admin accordé ✅");
             } else if (error.message && error.message.includes('AADSTS500011')) {
                 console.error("💡 AADSTS500011 = Resource not found");
-                console.error("   Le scope Dynamics CRM n'est pas reconnu");
-                console.error("   Vérifiez que vous avez la permission 'Dynamics CRM' dans Azure AD");
+                console.error("   L'environnement Power Platform n'est pas reconnu");
+                console.error("   Vérifiez que vous avez ajouté l'API dans Azure AD");
             } else if (error.message && error.message.includes('Interaction')) {
                 console.error("💡 Interaction requise");
                 console.error("   Une popup va s'ouvrir pour le consentement");
@@ -136,12 +136,13 @@ class CopilotAuthenticated {
             
             // Vérifier que c'est un token valide
             if (decoded.aud) {
-                if (decoded.aud.includes('crm') || decoded.aud.includes('dynamics')) {
-                    console.log("   ✅ TOKEN DYNAMICS CRM VALIDE !");
-                } else if (decoded.aud.includes('powerplatform')) {
+                if (decoded.aud.includes('powerplatform') || 
+                    decoded.aud.includes('environment.api')) {
                     console.log("   ✅ TOKEN POWER PLATFORM VALIDE !");
+                } else if (decoded.aud.includes('crm') || decoded.aud.includes('dynamics')) {
+                    console.log("   ✅ TOKEN DYNAMICS CRM VALIDE !");
                 } else {
-                    console.warn("   ⚠️ Audience inattendue mais on essaie quand même");
+                    console.warn("   ⚠️ Audience inattendue:", decoded.aud);
                 }
             }
             
@@ -286,8 +287,9 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Azure AD → API permissions → Dynamics CRM → user_impersonation ✅</li>
+                            <li>Azure AD → API permissions → Power Platform → user_impersonation ✅</li>
                             <li>Consentement administrateur accordé ✅</li>
+                            <li>L'environnement Power Platform est bien enregistré dans Azure AD</li>
                             <li>Vérifiez la console (F12) pour les détails</li>
                         </ul>
                     </div>
