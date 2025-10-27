@@ -1,6 +1,6 @@
 /**
  * Azure Function pour échanger un token user via OBO (On-Behalf-Of)
- * pour obtenir un token Power Platform
+ * VERSION CORRIGÉE - Accepte les deux formats d'audience
  */
 
 const msal = require('@azure/msal-node');
@@ -33,50 +33,42 @@ module.exports = async function (context, req) {
         const userToken = authHeader.substring(7); // Enlever "Bearer "
         context.log('✅ Token utilisateur reçu');
         
-        // Debug: Décoder le token pour vérifier
+        // 2. Décoder le token pour vérifier (sans validation complète)
         const tokenPayload = JSON.parse(Buffer.from(userToken.split('.')[1], 'base64').toString());
         context.log('🔍 Token info:', {
             audience: tokenPayload.aud,
-            audienceType: typeof tokenPayload.aud,
             scopes: tokenPayload.scp,
-            issuer: tokenPayload.iss
+            issuer: tokenPayload.iss,
+            version: tokenPayload.ver
         });
 
-        // Vérification critique de l'audience
-        // Accepter soit le Client ID directement, soit avec le préfixe api://
-        const expectedAudiences = [
-            process.env.AZURE_CLIENT_ID,
-            `api://${process.env.AZURE_CLIENT_ID}`
-        ];
+        // 3. Validation de l'audience - ACCEPTER LES DEUX FORMATS
+        const clientId = process.env.AZURE_CLIENT_ID;
         
-        context.log('🔍 Expected audiences:', expectedAudiences);
-        context.log('🔍 AZURE_CLIENT_ID from env:', process.env.AZURE_CLIENT_ID);
-        
-        // Normaliser l'audience (gérer tableau ou string)
+        // L'audience peut être soit juste le Client ID, soit avec le préfixe api://
         const tokenAudience = Array.isArray(tokenPayload.aud) 
             ? tokenPayload.aud[0] 
             : tokenPayload.aud;
-            
-        context.log('🔍 Token audience (normalized):', tokenAudience);
         
-        const audienceMatches = expectedAudiences.some(expectedAud => {
-            const matches = tokenAudience === expectedAud || 
-                           (tokenAudience && tokenAudience.includes && tokenAudience.includes(expectedAud));
-            context.log(`🔍 Comparing '${tokenAudience}' with '${expectedAud}': ${matches}`);
-            return matches;
-        });
+        // Vérifier si l'audience correspond à notre Client ID (avec ou sans préfixe)
+        const audienceValid = 
+            tokenAudience === clientId || 
+            tokenAudience === `api://${clientId}` ||
+            (typeof tokenAudience === 'string' && tokenAudience.includes(clientId));
         
-        if (!tokenAudience || !audienceMatches) {
-            context.log.error('❌ ERREUR: Mauvaise audience dans le token');
-            context.log.error('   Attendue (l\'une de):', expectedAudiences);
-            context.log.error('   Reçue:', tokenAudience);
-            context.log.error('   Type:', typeof tokenAudience);
-            throw new Error('Token avec une audience incorrecte. Le token doit être destiné à cette API.');
+        if (!audienceValid) {
+            context.log.error('❌ Audience invalide !');
+            context.log.error('   Client ID:', clientId);
+            context.log.error('   Token audience:', tokenAudience);
+            context.log.error('   Formats acceptés:');
+            context.log.error('     - ' + clientId);
+            context.log.error('     - api://' + clientId);
+            throw new Error('Token avec une audience incorrecte');
         }
         
         context.log('✅ Audience validée:', tokenAudience);
 
-        // 2. Configuration MSAL pour OBO
+        // 4. Configuration MSAL pour OBO
         const confidentialClientConfig = {
             auth: {
                 clientId: process.env.AZURE_CLIENT_ID,
@@ -88,17 +80,17 @@ module.exports = async function (context, req) {
         const confidentialClient = new msal.ConfidentialClientApplication(confidentialClientConfig);
         context.log('✅ Client MSAL configuré');
 
-        // 3. Préparer la requête OBO
+        // 5. Préparer la requête OBO
         const oboRequest = {
             oboAssertion: userToken,
             scopes: [`${process.env.POWER_PLATFORM_ENDPOINT}/.default`],
-            skipCache: false // Utiliser le cache si possible
+            skipCache: false
         };
 
         context.log('📍 Échange OBO en cours...');
         context.log('   Target scope:', oboRequest.scopes[0]);
 
-        // 4. Acquérir le token via OBO
+        // 6. Acquérir le token via OBO
         const oboResponse = await confidentialClient.acquireTokenOnBehalfOf(oboRequest);
         
         if (!oboResponse || !oboResponse.accessToken) {
@@ -106,9 +98,10 @@ module.exports = async function (context, req) {
         }
 
         context.log('✅ Token Power Platform obtenu via OBO');
+        context.log(`   Scopes: ${oboResponse.scopes.join(', ')}`);
         context.log(`   Expire: ${new Date(oboResponse.expiresOn).toLocaleString()}`);
 
-        // 5. Retourner le token
+        // 7. Retourner le token
         context.res.status = 200;
         context.res.body = {
             token: oboResponse.accessToken,
@@ -123,21 +116,22 @@ module.exports = async function (context, req) {
         context.log.error('Message:', error.message);
         context.log.error('Stack:', error.stack);
 
-        // Erreurs spécifiques avec aide
-        if (error.message.includes('AADSTS50013')) {
+        // Messages d'aide selon l'erreur
+        if (error.message && error.message.includes('AADSTS50013')) {
             context.log.error('💡 AADSTS50013 = Client secret invalide ou expiré');
-        } else if (error.message.includes('AADSTS65001')) {
-            context.log.error('💡 AADSTS65001 = Permissions API manquantes dans Azure AD');
-        } else if (error.message.includes('AADSTS5002730')) {
-            context.log.error('💡 AADSTS5002730 = Token avec mauvaise audience');
-            context.log.error('   Le token frontend doit demander: api://[CLIENT_ID]/access_as_user');
+            context.log.error('   Vérifiez AZURE_CLIENT_SECRET dans les variables d\'environnement');
+        } else if (error.message && error.message.includes('AADSTS65001')) {
+            context.log.error('💡 AADSTS65001 = Permissions API manquantes');
+            context.log.error('   Ajoutez les permissions Power Platform dans Azure AD');
+        } else if (error.message && error.message.includes('AADSTS700016')) {
+            context.log.error('💡 AADSTS700016 = Application non trouvée');
+            context.log.error('   Vérifiez AZURE_CLIENT_ID dans les variables d\'environnement');
         }
 
         context.res.status = error.statusCode || 500;
         context.res.body = {
             error: error.message,
-            errorCode: error.errorCode,
-            details: error.errorMessage,
+            errorCode: error.errorCode || 'UNKNOWN_ERROR',
             timestamp: new Date().toISOString()
         };
     }
