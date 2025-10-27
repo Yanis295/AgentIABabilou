@@ -70,9 +70,11 @@ class CopilotAuthenticated {
             console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO ===");
             console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
-            // 1. Obtenir le token utilisateur Graph
+            // 1. Obtenir le token utilisateur avec le scope API
             console.log("⏳ Récupération du token utilisateur...");
-            const userToken = await authManager.getAccessToken(['user.read']);
+            const userToken = await authManager.getAccessToken([
+                'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
+            ]);
             
             if (!userToken) {
                 throw new Error("Impossible d'obtenir le token utilisateur");
