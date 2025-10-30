@@ -1,9 +1,11 @@
 /**
  * Azure Function pour échanger un token user via OBO
- * VERSION ULTRA-SIMPLIFIÉE pour debugging
+ * VERSION SÉCURISÉE avec validation JWT complète
  */
 
 const msal = require('@azure/msal-node');
+const jwt = require('jsonwebtoken');
+const jwksRsa = require('jwks-rsa');
 
 module.exports = async function (context, req) {
     // CORS headers
@@ -46,39 +48,92 @@ module.exports = async function (context, req) {
         context.log('✅ Token utilisateur reçu');
         context.log('   Longueur:', userToken.length);
         
-        // 3. Décoder le token
-        const tokenPayload = JSON.parse(
-            Buffer.from(userToken.split('.')[1], 'base64').toString()
-        );
+        // 3. VALIDATION JWT SÉCURISÉE avec vérification de signature
+        context.log('🔐 === VALIDATION JWT SÉCURISÉE ===');
         
-        context.log('🔍 Token décodé:');
-        context.log('   Audience (aud):', tokenPayload.aud);
-        context.log('   Scopes (scp):', tokenPayload.scp);
-        context.log('   Version (ver):', tokenPayload.ver);
-        context.log('   Issuer (iss):', tokenPayload.iss);
-        context.log('   Expire (exp):', new Date(tokenPayload.exp * 1000).toISOString());
-
-        // 4. Validation d'audience TRÈS SIMPLE
+        const tenantId = process.env.AZURE_TENANT_ID;
         const clientId = process.env.AZURE_CLIENT_ID;
-        const tokenAud = tokenPayload.aud;
+
+        // Audiences acceptées (Option A - strict)
+        const expectedAudiences = new Set([
+            `api://${clientId}`,  // Format recommandé
+            clientId              // Format alternatif toléré
+        ]);
+
+        context.log('   Audiences acceptées:');
+        expectedAudiences.forEach(aud => context.log('     -', aud));
+
+        // Configuration JWKS pour récupérer les clés publiques Azure AD
+        const jwksClient = jwksRsa({
+            jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+            cache: true,
+            cacheMaxAge: 86400000, // 24 heures
+            rateLimit: true,
+            jwksRequestsPerMinute: 10
+        });
+
+        // Fonction pour obtenir la clé publique de vérification
+        function getKey(header, callback) {
+            jwksClient.getSigningKey(header.kid, (err, key) => {
+                if (err) {
+                    context.log.error('❌ Erreur récupération clé JWKS:', err);
+                    return callback(err);
+                }
+                const signingKey = key.getPublicKey();
+                callback(null, signingKey);
+            });
+        }
+
+        // Vérification complète du JWT (signature + issuer + expiration)
+        context.log('⏳ Vérification de la signature JWT...');
         
-        context.log('🎯 Validation d\'audience:');
-        context.log('   Client ID attendu:', clientId);
-        context.log('   Audience du token:', tokenAud);
-        context.log('   Type audience:', typeof tokenAud);
+        const decoded = await new Promise((resolve, reject) => {
+            jwt.verify(
+                userToken,
+                getKey,
+                {
+                    algorithms: ['RS256'],
+                    issuer: new RegExp(`https://login\\.microsoftonline\\.com/${tenantId}/v2\\.0`),
+                    // On ne met pas 'audience' dans les options pour pouvoir contrôler manuellement
+                },
+                (err, payload) => {
+                    if (err) {
+                        context.log.error('❌ Erreur vérification JWT:', err.message);
+                        reject(err);
+                    } else {
+                        resolve(payload);
+                    }
+                }
+            );
+        });
+
+        context.log('✅ Signature JWT validée !');
+        context.log('🔍 Token décodé:');
+        context.log('   Audience (aud):', decoded.aud);
+        context.log('   Scopes (scp):', decoded.scp || decoded.roles);
+        context.log('   Version (ver):', decoded.ver);
+        context.log('   Issuer (iss):', decoded.iss);
+        context.log('   Subject (sub):', decoded.sub);
+        context.log('   Expire (exp):', new Date(decoded.exp * 1000).toISOString());
+
+        // 4. Validation stricte de l'audience
+        context.log('🎯 Validation de l\'audience:');
+        context.log('   Audience du token:', decoded.aud);
+        context.log('   Type audience:', typeof decoded.aud);
         
-        // Accepter si l'audience contient le client ID
-        const audienceOk = tokenAud === clientId || 
-                          tokenAud === `api://${clientId}` ||
-                          (typeof tokenAud === 'string' && tokenAud.includes(clientId));
-        
-        if (!audienceOk) {
+        if (!expectedAudiences.has(decoded.aud)) {
             context.log.error('❌ AUDIENCE INVALIDE !');
-            context.log.error('   Le token n\'est pas destiné à cette API');
-            context.log.error('   Vérifiez que:');
-            context.log.error('   1. Le Client ID dans Azure Static Web App est correct');
-            context.log.error('   2. Le frontend demande le bon scope');
-            throw new Error(`Audience invalide: attendu ${clientId}, reçu ${tokenAud}`);
+            context.log.error('   Attendu:', Array.from(expectedAudiences).join(' ou '));
+            context.log.error('   Reçu:', decoded.aud);
+            context.log.error('');
+            context.log.error('💡 Vérifiez que:');
+            context.log.error('   1. Le frontend demande le scope: api://' + clientId + '/access_as_user');
+            context.log.error('   2. L\'App ID URI dans Azure AD est: api://' + clientId);
+            context.log.error('   3. Le scope "access_as_user" est bien exposé dans Azure AD');
+            
+            throw new Error(
+                `Audience invalide: attendu ${Array.from(expectedAudiences).join(' ou ')}, reçu ${decoded.aud}`
+            );
         }
         
         context.log('✅ Audience validée !');
@@ -147,6 +202,18 @@ module.exports = async function (context, req) {
             context.log.error('Stack:', error.stack);
         }
         
+        // Détails supplémentaires pour les erreurs JWT
+        if (error.name === 'JsonWebTokenError') {
+            context.log.error('💡 Erreur JWT détectée');
+            if (error.message.includes('invalid signature')) {
+                context.log.error('   = Signature invalide');
+                context.log.error('   Solution: Vérifiez que le token provient bien d\'Azure AD');
+            } else if (error.message.includes('jwt expired')) {
+                context.log.error('   = Token expiré');
+                context.log.error('   Solution: Le frontend doit redemander un token');
+            }
+        }
+        
         // Détails supplémentaires pour les erreurs MSAL
         if (error.errorCode) {
             context.log.error('Code erreur:', error.errorCode);
@@ -155,7 +222,7 @@ module.exports = async function (context, req) {
             context.log.error('Message erreur:', error.errorMessage);
         }
 
-        // Messages d'aide
+        // Messages d'aide selon le code d'erreur Azure AD
         if (error.message && error.message.includes('AADSTS')) {
             const errorCode = error.message.match(/AADSTS\d+/)?.[0];
             context.log.error('💡 Code erreur Azure AD détecté:', errorCode);
@@ -163,19 +230,20 @@ module.exports = async function (context, req) {
             switch (errorCode) {
                 case 'AADSTS50013':
                     context.log.error('   = Client secret invalide ou expiré');
-                    context.log.error('   Solution: Vérifiez AZURE_CLIENT_SECRET');
+                    context.log.error('   Solution: Vérifiez AZURE_CLIENT_SECRET dans Azure Static Web App');
                     break;
                 case 'AADSTS65001':
                     context.log.error('   = Permissions API manquantes');
                     context.log.error('   Solution: Ajoutez les permissions Power Platform dans Azure AD');
+                    context.log.error('   Puis accordez le consentement administrateur');
                     break;
                 case 'AADSTS700016':
                     context.log.error('   = Application non trouvée');
                     context.log.error('   Solution: Vérifiez AZURE_CLIENT_ID et AZURE_TENANT_ID');
                     break;
-                case 'AADSTS5002730':
-                    context.log.error('   = Mauvaise audience dans le token');
-                    context.log.error('   Solution: Le frontend doit demander le bon scope');
+                case 'AADSTS50027':
+                    context.log.error('   = Token JWT invalide');
+                    context.log.error('   Solution: Le token fourni n\'est pas valide ou est malformé');
                     break;
             }
         }
@@ -184,7 +252,7 @@ module.exports = async function (context, req) {
         context.res.body = {
             success: false,
             error: error.message,
-            errorCode: error.errorCode || 'UNKNOWN_ERROR',
+            errorCode: error.errorCode || error.name || 'UNKNOWN_ERROR',
             timestamp: new Date().toISOString()
         };
     }
