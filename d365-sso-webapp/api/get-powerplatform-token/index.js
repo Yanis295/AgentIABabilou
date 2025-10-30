@@ -74,14 +74,32 @@ module.exports = async function (context, req) {
 
         // Fonction pour obtenir la clé publique de vérification
         function getKey(header, callback) {
-            jwksClient.getSigningKey(header.kid, (err, key) => {
-                if (err) {
-                    context.log.error('❌ Erreur récupération clé JWKS:', err);
-                    return callback(err);
-                }
-                const signingKey = key.getPublicKey();
-                callback(null, signingKey);
-            });
+            // Si pas de KID dans le header, récupérer toutes les clés et utiliser la première
+            if (!header.kid) {
+                context.log.warn('⚠️ Pas de KID dans le header JWT, utilisation de la première clé disponible');
+                jwksClient.getSigningKeys((err, keys) => {
+                    if (err) {
+                        context.log.error('❌ Erreur récupération clés JWKS:', err);
+                        return callback(err);
+                    }
+                    if (!keys || keys.length === 0) {
+                        return callback(new Error('Aucune clé disponible dans JWKS'));
+                    }
+                    const signingKey = keys[0].getPublicKey();
+                    context.log('✅ Utilisation de la première clé JWKS');
+                    callback(null, signingKey);
+                });
+            } else {
+                // Cas normal avec KID
+                jwksClient.getSigningKey(header.kid, (err, key) => {
+                    if (err) {
+                        context.log.error('❌ Erreur récupération clé JWKS:', err);
+                        return callback(err);
+                    }
+                    const signingKey = key.getPublicKey();
+                    callback(null, signingKey);
+                });
+            }
         }
 
         // Vérification complète du JWT (signature + issuer + expiration)
