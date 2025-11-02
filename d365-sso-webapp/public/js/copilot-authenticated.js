@@ -1,6 +1,6 @@
 /**
  * Intégration Copilot avec authentification via Azure Function OBO
- * VERSION OBO - Utilise une Azure Function backend pour l'échange de token
+ * VERSION CORRIGÉE - Meilleure gestion des erreurs
  */
 
 class CopilotAuthenticated {
@@ -14,14 +14,10 @@ class CopilotAuthenticated {
             botId: 'cr288_chatbotAgentIaBabilou',
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
             apiVersion: '2022-03-01-preview',
-            // URL de l'Azure Function pour l'échange OBO
             oboEndpoint: '/api/get-powerplatform-token'
         };
     }
 
-    /**
-     * Initialise le Copilot avec authentification
-     */
     async initialize() {
         try {
             console.log("🤖 === INITIALISATION COPILOT (OBO FLOW) ===");
@@ -37,7 +33,6 @@ class CopilotAuthenticated {
             console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            // Obtenir le token Power Platform via OBO
             const accessToken = await this.getAccessTokenViaOBO();
             if (!accessToken) {
                 throw new Error("Impossible d'obtenir le token Power Platform");
@@ -45,11 +40,9 @@ class CopilotAuthenticated {
 
             console.log("✅ Token Power Platform obtenu via OBO");
 
-            // Créer une conversation avec le bot
             await this.createConversation(accessToken);
             console.log("✅ Conversation créée:", this.conversationId);
 
-            // Initialiser le Web Chat
             await this.initializeWebChat(accessToken);
 
             this.isInitialized = true;
@@ -62,15 +55,11 @@ class CopilotAuthenticated {
         }
     }
 
-    /**
-     * Obtient un token Power Platform via l'Azure Function OBO
-     */
     async getAccessTokenViaOBO() {
         try {
             console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO ===");
             console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
-            // 1. Obtenir le token utilisateur avec le scope API
             console.log("⏳ Récupération du token utilisateur...");
             const userToken = await authManager.getAccessToken([
                 'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
@@ -83,7 +72,6 @@ class CopilotAuthenticated {
             console.log("✅ Token utilisateur obtenu");
             console.log(`   Preview: ${userToken.substring(0, 50)}...`);
             
-            // 2. Appeler l'Azure Function pour échanger le token
             console.log("⏳ Appel à l'Azure Function OBO...");
             
             const response = await fetch(this.config.oboEndpoint, {
@@ -97,9 +85,37 @@ class CopilotAuthenticated {
             console.log("📡 Réponse reçue:", response.status, response.statusText);
 
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error("❌ Erreur API:", errorData);
-                throw new Error(errorData.error || `Erreur HTTP ${response.status}`);
+                // Essayer de parser la réponse comme JSON, sinon utiliser le texte brut
+                let errorMessage;
+                let errorDetails = null;
+                
+                try {
+                    const errorData = await response.json();
+                    console.error("❌ Erreur API (JSON):", errorData);
+                    errorMessage = errorData.error || errorData.message || `Erreur HTTP ${response.status}`;
+                    errorDetails = errorData;
+                } catch (jsonError) {
+                    // Si ce n'est pas du JSON, récupérer le texte brut
+                    const errorText = await response.text();
+                    console.error("❌ Erreur API (Texte brut):", errorText);
+                    errorMessage = errorText || `Erreur HTTP ${response.status}`;
+                }
+                
+                // Conseils selon le type d'erreur
+                if (response.status === 500) {
+                    console.error("");
+                    console.error("💡 Erreur 500 - Problème côté serveur");
+                    console.error("   Vérifiez:");
+                    console.error("   1. Les variables d'environnement dans Azure Static Web App");
+                    console.error("   2. Les logs de l'Azure Function");
+                    console.error("   3. Que le Client Secret est valide");
+                } else if (response.status === 404) {
+                    console.error("");
+                    console.error("💡 Erreur 404 - Azure Function introuvable");
+                    console.error("   Vérifiez que la Function est déployée");
+                }
+                
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();
@@ -109,12 +125,14 @@ class CopilotAuthenticated {
             }
 
             console.log("✅ Token Power Platform reçu !");
-            console.log("   Scopes:", data.scopes);
-            console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
+            if (data.scopes) console.log("   Scopes:", data.scopes);
+            if (data.expiresOn) console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
             console.log(`   Preview: ${data.token.substring(0, 50)}...`);
             
-            // Debug : vérifier l'audience
-            this.debugToken(data.token);
+            // Debug info si disponible
+            if (data.debug) {
+                console.log("🔍 Infos debug:", data.debug);
+            }
             
             console.log("✅ === FIN RÉCUPÉRATION TOKEN OBO - SUCCÈS ===");
             
@@ -129,57 +147,10 @@ class CopilotAuthenticated {
                 console.error("Stack:", error.stack);
             }
             
-            // Messages d'aide selon l'erreur
-            if (error.message.includes('Failed to fetch')) {
-                console.error("💡 Erreur réseau");
-                console.error("   Vérifiez que l'Azure Function est déployée");
-                console.error("   URL:", window.location.origin + this.config.oboEndpoint);
-            } else if (error.message.includes('AADSTS')) {
-                console.error("💡 Erreur Azure AD");
-                console.error("   Vérifiez les permissions et le client secret");
-            }
-            
             throw new Error(`Impossible d'obtenir le token: ${error.message}`);
         }
     }
 
-    /**
-     * Debug : Décoder et vérifier le token JWT
-     */
-    debugToken(token) {
-        try {
-            const payload = token.split('.')[1];
-            const decoded = JSON.parse(atob(payload));
-            
-            console.log("🔍 === ANALYSE DU TOKEN POWER PLATFORM ===");
-            console.log("   Audience (aud):", decoded.aud);
-            console.log("   Scopes (scp):", decoded.scp || decoded.roles);
-            console.log("   Issuer (iss):", decoded.iss);
-            console.log("   Version (ver):", decoded.ver);
-            console.log("   Expire:", new Date(decoded.exp * 1000).toLocaleString());
-            
-            // Vérifier que c'est un token valide
-            if (decoded.aud) {
-                if (decoded.aud.includes('powerplatform') || 
-                    decoded.aud.includes('environment.api')) {
-                    console.log("   ✅ TOKEN POWER PLATFORM VALIDE !");
-                } else if (decoded.aud.includes('crm') || decoded.aud.includes('dynamics')) {
-                    console.log("   ✅ TOKEN DYNAMICS CRM VALIDE !");
-                } else {
-                    console.warn("   ⚠️ Audience inattendue:", decoded.aud);
-                }
-            }
-            
-            console.log("=================================================");
-            
-        } catch (error) {
-            console.warn("⚠️ Impossible de décoder le token:", error);
-        }
-    }
-
-    /**
-     * Crée une conversation avec le bot
-     */
     async createConversation(accessToken) {
         try {
             const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations`;
@@ -220,9 +191,6 @@ class CopilotAuthenticated {
         }
     }
 
-    /**
-     * Initialise le Web Chat
-     */
     async initializeWebChat(accessToken) {
         try {
             console.log("🎨 Initialisation du Web Chat...");
@@ -268,9 +236,6 @@ class CopilotAuthenticated {
         }
     }
 
-    /**
-     * Crée un adaptateur pour Power Platform
-     */
     createPowerPlatformAdapter(accessToken) {
         const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations/${this.conversationId}`;
         
@@ -284,9 +249,6 @@ class CopilotAuthenticated {
         });
     }
 
-    /**
-     * Obtient les initiales d'un nom
-     */
     getInitials(name) {
         if (!name) return '?';
         const parts = name.split(' ');
@@ -296,9 +258,6 @@ class CopilotAuthenticated {
         return name.substring(0, 2).toUpperCase();
     }
 
-    /**
-     * Affiche une erreur
-     */
     showError(message) {
         const container = document.getElementById('copilot-webchat');
         if (container) {
@@ -311,7 +270,7 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Variables d'environnement configurées dans Azure Static Web App ✅</li>
+                            <li>Variables d'environnement configurées dans Azure Static Web App</li>
                             <li>Client Secret valide et non expiré</li>
                             <li>Azure Function déployée</li>
                             <li>Permissions API accordées avec consentement admin</li>
