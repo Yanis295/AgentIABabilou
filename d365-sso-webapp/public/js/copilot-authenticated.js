@@ -61,8 +61,10 @@ class CopilotAuthenticated {
             console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
             console.log("⏳ Récupération du token utilisateur...");
+            // TEMPORAIRE : Utiliser User.Read qui fonctionne toujours
+            // Au lieu de api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user
             const userToken = await authManager.getAccessToken([
-                'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
+                'User.Read'
             ]);
             
             if (!userToken) {
