@@ -77,28 +77,35 @@ class CopilotAuthenticated {
             console.log("✅ Token backend obtenu");
             console.log(`   Preview: ${userToken.substring(0, 50)}...`);
             
-            // Décoder et vérifier l'audience
+            // --- Vérification token backend (non bloquante côté front) ---
             const decoded = this.decodeJWT(userToken);
-            if (decoded) {
-                console.log("🔍 === VÉRIFICATION TOKEN ===");
-                console.log("   Audience (aud):", decoded.payload.aud);
-                console.log("   Scopes (scp):", decoded.payload.scp);
-                console.log("   Version (ver):", decoded.payload.ver);
-                console.log("   Issuer (iss):", decoded.payload.iss);
-                
-                // Vérifier que l'audience est correcte
-                const expectedAud = `api://${backendApiConfig.backendClientId}`;
-                if (decoded.payload.aud === expectedAud) {
-                    console.log("✅ Audience CORRECTE !");
-                    console.log("   Attendu:", expectedAud);
-                    console.log("   Reçu:", decoded.payload.aud);
-                } else {
-                    console.warn("⚠️  AUDIENCE INCORRECTE !");
-                    console.warn("   Attendu:", expectedAud);
-                    console.warn("   Reçu:", decoded.payload.aud);
-                    console.warn("   Vérifiez que backendApiConfig.backendClientId est correct");
-                }
+            if (decoded && decoded.payload) {
+              const { aud, scp, ver, iss } = decoded.payload;
+              console.log("🔍 === VÉRIFICATION TOKEN ===");
+              console.log("   Audience (aud):", aud);
+              console.log("   Scopes (scp):", scp);
+              console.log("   Version (ver):", ver);
+              console.log("   Issuer (iss):", iss);
+            
+              const expectedAudValues = [
+                backendApiConfig.backendClientId,                // GUID
+                `api://${backendApiConfig.backendClientId}`,     // api://<guid>
+                backendApiConfig.applicationIdUri || null        // URI personnalisé éventuel
+              ].filter(Boolean);
+            
+              const audOk = expectedAudValues.includes(aud);
+              if (!audOk) {
+                console.warn("⚠️ AUDIENCE INATTENDUE", { expectedAudValues, received: aud });
+                // Ne PAS bloquer ici : la vraie sécurité est côté backend
+              } else {
+                console.log("✅ Audience acceptée");
+              }
+            
+              if (typeof scp === 'string' && !scp.split(' ').includes('access_as_user')) {
+                console.warn("⚠️ Scope 'access_as_user' manquant dans le token backend");
+              }
             }
+
             
             console.log("⏳ Appel à l'Azure Function OBO...");
             
@@ -173,25 +180,26 @@ class CopilotAuthenticated {
      * Décoder un JWT (sans vérifier la signature)
      */
     decodeJWT(token) {
-        try {
-            const parts = token.split('.');
-            if (parts.length !== 3) return null;
-            
-            // Remplacer les caractères URL-safe
-            const base64Url = parts[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            
-            const payload = JSON.parse(atob(base64));
-            
-            const headerBase64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
-            const header = JSON.parse(atob(headerBase64));
-            
-            return { header, payload };
-        } catch (error) {
-            console.error("Erreur décodage JWT:", error);
-            return null;
-        }
+      try {
+        const [h, p] = token.split('.');
+        if (!h || !p) return null;
+    
+        const b64 = (s) => {
+          let t = s.replace(/-/g, '+').replace(/_/g, '/');
+          const pad = t.length % 4;
+          if (pad) t += '='.repeat(4 - pad);
+          return atob(t);
+        };
+    
+        const header = JSON.parse(b64(h));
+        const payload = JSON.parse(b64(p));
+        return { header, payload };
+      } catch (e) {
+        console.error("Erreur décodage JWT:", e);
+        return null;
+      }
     }
+
 
     async createConversation(accessToken) {
         try {
