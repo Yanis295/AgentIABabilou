@@ -257,8 +257,9 @@ class AuthManager {
 
     /**
      * Obtient un access token pour les appels API
+     * ⚠️ MODIFIÉ : Accepte maintenant forceRefresh pour invalider le cache
      */
-    async getAccessToken(scopes = tokenRequest.scopes) {
+    async getAccessToken(scopes = tokenRequest.scopes, forceRefresh = false) {
         try {
             if (!this.currentAccount) {
                 console.error("Aucun compte connecté");
@@ -267,7 +268,8 @@ class AuthManager {
 
             const request = {
                 scopes: scopes,
-                account: this.currentAccount
+                account: this.currentAccount,
+                forceRefresh: forceRefresh // ⬅️ NOUVEAU : Force le refresh du token
             };
 
             const response = await this.msalInstance.acquireTokenSilent(request);
@@ -278,6 +280,10 @@ class AuthManager {
             // Si une interaction est requise, utiliser la popup
             if (error instanceof msal.InteractionRequiredAuthError) {
                 try {
+                    const request = {
+                        scopes: scopes,
+                        account: this.currentAccount
+                    };
                     const response = await this.msalInstance.acquireTokenPopup(request);
                     return response.accessToken;
                 } catch (popupError) {
