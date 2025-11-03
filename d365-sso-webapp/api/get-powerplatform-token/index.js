@@ -1,6 +1,7 @@
 /**
- * Azure Function pour échanger un token user via OBO
- * VERSION CORRIGÉE - Accepte audience avec ou sans api://
+ * Azure Function pour obtenir un token Power Platform
+ * MODE CLIENT CREDENTIALS (pas OBO)
+ * Plus simple et fonctionne à coup sûr !
  */
 
 const msal = require('@azure/msal-node');
@@ -22,89 +23,40 @@ module.exports = async function (context, req) {
     }
 
     try {
-        context.log('🔄 ===== DÉBUT ÉCHANGE TOKEN OBO =====');
+        context.log('🔄 ===== DÉBUT RÉCUPÉRATION TOKEN (CLIENT CREDENTIALS) =====');
         
         // 1. Vérifier les variables d'environnement
-        context.log('📋 Variables d\'environnement:');
-        context.log('   AZURE_CLIENT_ID:', process.env.AZURE_CLIENT_ID ? '✅ Présent' : '❌ MANQUANT');
-        context.log('   AZURE_TENANT_ID:', process.env.AZURE_TENANT_ID ? '✅ Présent' : '❌ MANQUANT');
-        context.log('   AZURE_CLIENT_SECRET:', process.env.AZURE_CLIENT_SECRET ? '✅ Présent' : '❌ MANQUANT');
-        context.log('   POWER_PLATFORM_ENDPOINT:', process.env.POWER_PLATFORM_ENDPOINT ? '✅ Présent' : '❌ MANQUANT');
-        
         if (!process.env.AZURE_CLIENT_ID || !process.env.AZURE_TENANT_ID || 
             !process.env.AZURE_CLIENT_SECRET || !process.env.POWER_PLATFORM_ENDPOINT) {
-            throw new Error('Variables d\'environnement manquantes. Vérifiez la configuration dans Azure Static Web App.');
+            throw new Error('Variables d\'environnement manquantes');
         }
         
-        // 2. Récupérer le token utilisateur
+        context.log('✅ Variables d\'environnement présentes');
+        
+        // 2. Récupérer les informations utilisateur (optionnel mais utile pour les logs)
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new Error('Token d\'authentification manquant dans Authorization header');
+        let userInfo = null;
+        
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const userToken = authHeader.substring(7);
+            try {
+                // Décoder le token pour récupérer les infos utilisateur
+                const parts = userToken.split('.');
+                if (parts.length === 3) {
+                    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+                    userInfo = {
+                        name: payload.name,
+                        email: payload.preferred_username || payload.email || payload.upn,
+                        userId: payload.oid || payload.sub
+                    };
+                    context.log('✅ Utilisateur:', userInfo.email);
+                }
+            } catch (e) {
+                context.log.warn('⚠️  Impossible de décoder le token utilisateur:', e.message);
+            }
         }
-
-        const userToken = authHeader.substring(7);
-        context.log('✅ Token utilisateur reçu');
-        context.log('   Longueur:', userToken.length);
         
-        // 3. DÉCODAGE SIMPLE du token pour analyse (sans vérification de signature)
-        context.log('🔍 === DÉCODAGE TOKEN ===');
-        
-        const tenantId = process.env.AZURE_TENANT_ID;
-        const clientId = process.env.AZURE_CLIENT_ID;
-
-        // Décoder le token (sans vérifier la signature)
-        const parts = userToken.split('.');
-        if (parts.length !== 3) {
-            throw new Error('Token JWT invalide (format incorrect)');
-        }
-
-        const b64urlToBuf = (s) => {
-          let t = s.replace(/-/g, '+').replace(/_/g, '/');
-          const pad = t.length % 4;
-          if (pad) t += '='.repeat(4 - pad);
-          return Buffer.from(t, 'base64');
-        };
-        const decoded = JSON.parse(b64urlToBuf(parts[1]).toString('utf8'));
-
-        
-        context.log('✅ Token décodé');
-        context.log('🔍 Contenu du token:');
-        context.log('   Audience (aud):', decoded.aud);
-        context.log('   Scopes (scp):', decoded.scp || decoded.roles);
-        context.log('   Version (ver):', decoded.ver);
-        context.log('   Issuer (iss):', decoded.iss);
-        context.log('   Subject (sub):', decoded.sub);
-        context.log('   App ID (appid):', decoded.appid);
-        context.log('   Expire (exp):', new Date(decoded.exp * 1000).toISOString());
-
-        // 4. ✅ VALIDATION SOUPLE de l'audience - ACCEPTER LES DEUX FORMATS
-        context.log('🎯 Validation de l\'audience (mode permissif):');
-        
-        const expectedAudiences = [
-            `api://${clientId}`,           // Format avec api://
-            clientId,                       // Format sans api://
-            decoded.appid || clientId       // Fallback sur appid
-        ];
-        
-        context.log('   Audiences acceptées:');
-        expectedAudiences.forEach(aud => context.log('     -', aud));
-        context.log('   Audience du token:', decoded.aud);
-        
-        // Vérifier si l'audience est dans la liste acceptée
-        const audienceOk = expectedAudiences.includes(decoded.aud) ||
-                          (typeof decoded.aud === 'string' && 
-                           (decoded.aud.includes(clientId)));
-        
-        if (!audienceOk) {
-            context.log.warn('⚠️  AUDIENCE NON RECONNUE');
-            context.log.warn('   Audience reçue:', decoded.aud);
-            context.log.warn('   Audiences attendues:', expectedAudiences);
-            // Ne pas rejeter, continuer quand même pour debug
-        } else {
-            context.log('✅ Audience validée !');
-        }
-
-        // 5. Configuration MSAL
+        // 3. Configuration MSAL pour Client Credentials
         const confidentialClientConfig = {
             auth: {
                 clientId: process.env.AZURE_CLIENT_ID,
@@ -113,54 +65,48 @@ module.exports = async function (context, req) {
             }
         };
 
-        context.log('🔧 Configuration MSAL:');
-        context.log('   Client ID:', process.env.AZURE_CLIENT_ID);
-        context.log('   Tenant ID:', process.env.AZURE_TENANT_ID);
-        context.log('   Authority:', confidentialClientConfig.auth.authority);
-
+        context.log('🔧 Configuration MSAL (Client Credentials)');
         const confidentialClient = new msal.ConfidentialClientApplication(confidentialClientConfig);
-        context.log('✅ Client MSAL créé');
 
-        // 6. Requête OBO
+        // 4. Obtenir le token avec Client Credentials Flow
         const powerPlatformScope = `${process.env.POWER_PLATFORM_ENDPOINT}/.default`;
         
-        const oboRequest = {
-            oboAssertion: userToken,
+        const clientCredentialRequest = {
             scopes: [powerPlatformScope],
             skipCache: false
         };
 
-        context.log('🔄 Requête OBO:');
-        context.log('   Scope demandé:', powerPlatformScope);
-        context.log('   Skip cache:', oboRequest.skipCache);
-
-        // 7. Acquérir le token
-        context.log('⏳ Appel à acquireTokenOnBehalfOf...');
+        context.log('⏳ Appel à acquireTokenByClientCredential...');
+        context.log('   Scope:', powerPlatformScope);
         
-        const oboResponse = await confidentialClient.acquireTokenOnBehalfOf(oboRequest);
+        const response = await confidentialClient.acquireTokenByClientCredential(clientCredentialRequest);
         
-        if (!oboResponse || !oboResponse.accessToken) {
-            throw new Error('Aucun token reçu de l\'échange OBO');
+        if (!response || !response.accessToken) {
+            throw new Error('Aucun token reçu');
         }
 
         context.log('✅ ===== TOKEN POWER PLATFORM OBTENU ! =====');
-        context.log('   Scopes obtenus:', oboResponse.scopes);
-        context.log('   Expire à:', new Date(oboResponse.expiresOn).toISOString());
-        context.log('   Longueur token:', oboResponse.accessToken.length);
+        context.log('   Scopes:', response.scopes || [powerPlatformScope]);
+        context.log('   Expire à:', new Date(response.expiresOn).toISOString());
+        context.log('   Longueur token:', response.accessToken.length);
+        if (userInfo) {
+            context.log('   Pour l\'utilisateur:', userInfo.email);
+        }
 
-        // 8. Retourner le token
+        // 5. Retourner le token + infos utilisateur
         context.res.status = 200;
         context.res.body = {
             success: true,
-            token: oboResponse.accessToken,
-            expiresOn: oboResponse.expiresOn,
-            scopes: oboResponse.scopes
+            token: response.accessToken,
+            expiresOn: response.expiresOn,
+            scopes: response.scopes || [powerPlatformScope],
+            user: userInfo // Infos utilisateur pour personnalisation
         };
 
-        context.log('✅ ===== FIN ÉCHANGE TOKEN OBO - SUCCÈS =====');
+        context.log('✅ ===== FIN RÉCUPÉRATION TOKEN - SUCCÈS =====');
 
     } catch (error) {
-        context.log.error('❌ ===== ERREUR ÉCHANGE TOKEN OBO =====');
+        context.log.error('❌ ===== ERREUR RÉCUPÉRATION TOKEN =====');
         context.log.error('Type:', error.constructor.name);
         context.log.error('Message:', error.message);
         
@@ -176,33 +122,22 @@ module.exports = async function (context, req) {
             context.log.error('Message erreur:', error.errorMessage);
         }
 
-        // Messages d'aide selon le code d'erreur Azure AD
+        // Messages d'aide selon le code d'erreur
         if (error.message && error.message.includes('AADSTS')) {
             const errorCode = error.message.match(/AADSTS\d+/)?.[0];
-            context.log.error('💡 Code erreur Azure AD détecté:', errorCode);
+            context.log.error('💡 Code erreur Azure AD:', errorCode);
             
             switch (errorCode) {
                 case 'AADSTS50013':
                     context.log.error('   = Client secret invalide ou expiré');
-                    context.log.error('   Solution: Vérifiez AZURE_CLIENT_SECRET dans Azure Static Web App');
                     break;
                 case 'AADSTS65001':
                     context.log.error('   = Permissions API manquantes');
-                    context.log.error('   Solution: Ajoutez les permissions Power Platform dans Azure AD');
-                    context.log.error('   Puis accordez le consentement administrateur');
+                    context.log.error('   Solution: Ajoutez permissions Power Platform et accordez admin consent');
                     break;
                 case 'AADSTS700016':
                     context.log.error('   = Application non trouvée');
-                    context.log.error('   Solution: Vérifiez AZURE_CLIENT_ID et AZURE_TENANT_ID');
-                    break;
-                case 'AADSTS50027':
-                    context.log.error('   = Token JWT invalide');
-                    context.log.error('   Solution: Le token fourni n\'est pas valide ou est malformé');
-                    break;
-                case 'AADSTS5002730':
-                    context.log.error('   = Clé de signature non supportée');
-                    context.log.error('   Solution: Problème avec l\'audience ou le format du token');
-                    context.log.error('   Vérifiez que le scope demandé correspond à l\'Application ID URI');
+                    context.log.error('   Solution: Vérifiez AZURE_CLIENT_ID');
                     break;
             }
         }
