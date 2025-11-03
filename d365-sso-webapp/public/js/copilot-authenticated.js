@@ -64,7 +64,7 @@ class CopilotAuthenticated {
             // TEMPORAIRE : Utiliser User.Read qui fonctionne toujours
             // Au lieu de api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user
             const userToken = await authManager.getAccessToken([
-                'User.Read'
+                'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
             ]);
             
             if (!userToken) {
