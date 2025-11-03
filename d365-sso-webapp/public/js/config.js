@@ -1,13 +1,14 @@
 /**
  * Configuration MSAL pour l'authentification Microsoft
+ * ARCHITECTURE 2 APP REGISTRATIONS
  */
 
 const msalConfig = {
     auth: {
-        // ID de l'application Azure AD (Application/Client ID)
+        // ⚠️ CLIENT ID DE APP #1 (FRONTEND) - NE PAS CHANGER
         clientId: "fa67c7ea-67f2-4175-9e81-01afd04d64f8",
 
-        // ID du tenant Azure AD (Directory/Tenant ID)
+        // ID du tenant Azure AD
         authority: "https://login.microsoftonline.com/ee7b4ccb-8e30-435c-9368-1fce958df645",
 
         // URI de redirection après authentification
@@ -48,6 +49,30 @@ const msalConfig = {
     }
 };
 
+/**
+ * ⚠️ NOUVEAU : Configuration pour App #2 (Backend API)
+ */
+const backendApiConfig = {
+    // ✅ CLIENT ID DE APP #2 (BACKEND)
+    backendClientId: "d0e218fc-521d-443c-b1b3-0c5036834111",
+    
+    // Scope pour accéder au backend (construit automatiquement)
+    scopes: []
+};
+
+// Construire le scope dynamiquement
+backendApiConfig.scopes = [
+    `api://${backendApiConfig.backendClientId}/access_as_user`
+];
+
+console.log("🔧 Configuration Backend API:", {
+    clientId: backendApiConfig.backendClientId,
+    scope: backendApiConfig.scopes[0]
+});
+
+/**
+ * Scopes pour Microsoft Graph (profil utilisateur)
+ */
 const loginRequest = {
     scopes: ["user.read", "openid", "profile", "email"]
 };
