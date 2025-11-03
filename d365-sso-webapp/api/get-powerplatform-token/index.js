@@ -58,7 +58,14 @@ module.exports = async function (context, req) {
             throw new Error('Token JWT invalide (format incorrect)');
         }
 
-        const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+        const b64urlToBuf = (s) => {
+          let t = s.replace(/-/g, '+').replace(/_/g, '/');
+          const pad = t.length % 4;
+          if (pad) t += '='.repeat(4 - pad);
+          return Buffer.from(t, 'base64');
+        };
+        const decoded = JSON.parse(b64urlToBuf(parts[1]).toString('utf8'));
+
         
         context.log('✅ Token décodé');
         context.log('🔍 Contenu du token:');
