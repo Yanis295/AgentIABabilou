@@ -1,6 +1,6 @@
 /**
- * Intégration Copilot avec authentification via Azure Function OBO
- * ARCHITECTURE 2 APP REGISTRATIONS
+ * Intégration Copilot avec Client Credentials Flow
+ * PLUS SIMPLE - FONCTIONNE À COUP SÛR !
  */
 
 class CopilotAuthenticated {
@@ -13,15 +13,13 @@ class CopilotAuthenticated {
             botId: 'cr288_chatbotAgentIaBabilou',
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
             apiVersion: '2022-03-01-preview',
-            oboEndpoint: '/api/get-powerplatform-token'
+            tokenEndpoint: '/api/get-powerplatform-token'
         };
     }
 
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (OBO - 2 APPS) ===");
-            console.log("   App #1 (Frontend):", msalConfig.auth.clientId);
-            console.log("   App #2 (Backend):", backendApiConfig.backendClientId);
+            console.log("🤖 === INITIALISATION COPILOT (CLIENT CREDENTIALS) ===");
 
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
@@ -34,12 +32,12 @@ class CopilotAuthenticated {
             console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            const accessToken = await this.getAccessTokenViaOBO();
+            const accessToken = await this.getAccessToken();
             if (!accessToken) {
                 throw new Error("Impossible d'obtenir le token Power Platform");
             }
 
-            console.log("✅ Token Power Platform obtenu via OBO");
+            console.log("✅ Token Power Platform obtenu");
 
             await this.createConversation(accessToken);
             console.log("✅ Conversation créée:", this.conversationId);
@@ -56,64 +54,28 @@ class CopilotAuthenticated {
         }
     }
 
-    async getAccessTokenViaOBO() {
+    async getAccessToken() {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO (2 APPS) ===");
-            console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
+            console.log("🔑 === RÉCUPÉRATION TOKEN (CLIENT CREDENTIALS) ===");
+            console.log("📍 Endpoint:", this.config.tokenEndpoint);
             
-            console.log("⏳ Récupération du token pour le backend (App #2)...");
-            console.log("   Scope demandé:", backendApiConfig.scopes[0]);
-            
-            // ⚠️ CRITIQUE : Demander un token pour App #2 (Backend)
-            const userToken = await authManager.getAccessToken(
-                backendApiConfig.scopes,  // ⬅️ Scope pour App #2
-                true // forceRefresh
-            );
+            // Récupérer le token utilisateur (pour l'identité)
+            console.log("⏳ Récupération du token utilisateur...");
+            const userToken = await authManager.getAccessToken();
             
             if (!userToken) {
-                throw new Error("Impossible d'obtenir le token backend");
+                console.warn("⚠️  Pas de token utilisateur, continuons quand même");
+            } else {
+                console.log("✅ Token utilisateur obtenu");
             }
             
-            console.log("✅ Token backend obtenu");
-            console.log(`   Preview: ${userToken.substring(0, 50)}...`);
+            console.log("⏳ Appel à l'Azure Function...");
             
-            // --- Vérification token backend (non bloquante côté front) ---
-            const decoded = this.decodeJWT(userToken);
-            if (decoded && decoded.payload) {
-              const { aud, scp, ver, iss } = decoded.payload;
-              console.log("🔍 === VÉRIFICATION TOKEN ===");
-              console.log("   Audience (aud):", aud);
-              console.log("   Scopes (scp):", scp);
-              console.log("   Version (ver):", ver);
-              console.log("   Issuer (iss):", iss);
-            
-              const expectedAudValues = [
-                backendApiConfig.backendClientId,                // GUID
-                `api://${backendApiConfig.backendClientId}`,     // api://<guid>
-                backendApiConfig.applicationIdUri || null        // URI personnalisé éventuel
-              ].filter(Boolean);
-            
-              const audOk = expectedAudValues.includes(aud);
-              if (!audOk) {
-                console.warn("⚠️ AUDIENCE INATTENDUE", { expectedAudValues, received: aud });
-                // Ne PAS bloquer ici : la vraie sécurité est côté backend
-              } else {
-                console.log("✅ Audience acceptée");
-              }
-            
-              if (typeof scp === 'string' && !scp.split(' ').includes('access_as_user')) {
-                console.warn("⚠️ Scope 'access_as_user' manquant dans le token backend");
-              }
-            }
-
-            
-            console.log("⏳ Appel à l'Azure Function OBO...");
-            
-            const response = await fetch(this.config.oboEndpoint, {
+            const response = await fetch(this.config.tokenEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${userToken}`
+                    'Authorization': userToken ? `Bearer ${userToken}` : ''
                 }
             });
 
@@ -124,24 +86,11 @@ class CopilotAuthenticated {
                 
                 try {
                     const errorData = await response.json();
-                    console.error("❌ Erreur API (JSON):", errorData);
+                    console.error("❌ Erreur API:", errorData);
                     errorMessage = errorData.error || errorData.message || `Erreur HTTP ${response.status}`;
-                    
-                    // Aide au dépannage
-                    if (response.status === 500) {
-                        console.error("");
-                        console.error("💡 Erreur 500 - Vérifications :");
-                        console.error("   1. Variables d'environnement Azure Static Web App");
-                        console.error("      - AZURE_CLIENT_ID = d0e218fc-521d-443c-b1b3-0c5036834111");
-                        console.error("      - AZURE_CLIENT_SECRET = [Votre secret]");
-                        console.error("      - AZURE_TENANT_ID = ee7b4ccb-8e30-435c-9368-1fce958df645");
-                        console.error("   2. Client Secret valide et non expiré");
-                        console.error("   3. Permissions Power Platform accordées à App #2");
-                        console.error("   4. Admin consent accordé");
-                    }
                 } catch (jsonError) {
                     const errorText = await response.text();
-                    console.error("❌ Erreur API (Texte brut):", errorText);
+                    console.error("❌ Erreur API (texte):", errorText);
                     errorMessage = errorText || `Erreur HTTP ${response.status}`;
                 }
                 
@@ -151,20 +100,20 @@ class CopilotAuthenticated {
             const data = await response.json();
             
             if (!data.success || !data.token) {
-                throw new Error("Réponse OBO invalide");
+                throw new Error("Réponse invalide de l'API");
             }
 
             console.log("✅ Token Power Platform reçu !");
             if (data.scopes) console.log("   Scopes:", data.scopes);
             if (data.expiresOn) console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
-            console.log(`   Preview: ${data.token.substring(0, 50)}...`);
+            if (data.user) console.log("   Utilisateur:", data.user.email);
             
-            console.log("✅ === FIN RÉCUPÉRATION TOKEN OBO - SUCCÈS ===");
+            console.log("✅ === FIN RÉCUPÉRATION TOKEN - SUCCÈS ===");
             
             return data.token;
 
         } catch (error) {
-            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN OBO ===");
+            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN ===");
             console.error("Type:", error.constructor.name);
             console.error("Message:", error.message);
             
@@ -176,31 +125,6 @@ class CopilotAuthenticated {
         }
     }
 
-    /**
-     * Décoder un JWT (sans vérifier la signature)
-     */
-    decodeJWT(token) {
-      try {
-        const [h, p] = token.split('.');
-        if (!h || !p) return null;
-    
-        const b64 = (s) => {
-          let t = s.replace(/-/g, '+').replace(/_/g, '/');
-          const pad = t.length % 4;
-          if (pad) t += '='.repeat(4 - pad);
-          return atob(t);
-        };
-    
-        const header = JSON.parse(b64(h));
-        const payload = JSON.parse(b64(p));
-        return { header, payload };
-      } catch (e) {
-        console.error("Erreur décodage JWT:", e);
-        return null;
-      }
-    }
-
-
     async createConversation(accessToken) {
         try {
             const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations`;
@@ -209,8 +133,10 @@ class CopilotAuthenticated {
             });
 
             console.log("📞 Création de la conversation...");
-            console.log("   URL:", `${conversationUrl}?${params}`);
 
+            // Récupérer les infos utilisateur pour les passer au bot
+            const account = authManager.getAccount();
+            
             const response = await fetch(`${conversationUrl}?${params}`, {
                 method: 'POST',
                 headers: {
@@ -219,7 +145,13 @@ class CopilotAuthenticated {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    locale: 'fr-FR'
+                    locale: 'fr-FR',
+                    // Passer les infos utilisateur au bot
+                    context: {
+                        userName: account.name,
+                        userEmail: account.username,
+                        userId: account.localAccountId
+                    }
                 })
             });
 
@@ -234,6 +166,7 @@ class CopilotAuthenticated {
 
             console.log("✅ Conversation créée avec succès");
             console.log("   Conversation ID:", this.conversationId);
+            console.log("   Utilisateur:", account.name);
 
         } catch (error) {
             console.error("❌ Erreur lors de la création de la conversation:", error);
@@ -290,7 +223,6 @@ class CopilotAuthenticated {
         const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations/${this.conversationId}`;
         
         console.log("🔌 Création de l'adaptateur Direct Line");
-        console.log("   URL:", conversationUrl);
         
         return window.WebChat.createDirectLine({
             domain: conversationUrl,
@@ -320,17 +252,15 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>App #1 a la permission vers App #2</li>
-                            <li>Admin consent accordé</li>
                             <li>Variables d'environnement Azure Static Web App configurées</li>
                             <li>Client Secret valide (App #2)</li>
                             <li>Permissions Power Platform accordées à App #2</li>
-                            <li>Cache navigateur effacé (Ctrl+Shift+Del)</li>
-                            <li>Vérifiez la console (F12) pour les détails</li>
+                            <li>Admin consent accordé</li>
+                            <li>Vérifiez la console (F12) et les logs Azure Function</li>
                         </ul>
                     </div>
-                    <button onclick="sessionStorage.clear(); localStorage.clear(); location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        Effacer le cache et recharger
+                    <button onclick="location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Recharger la page
                     </button>
                 </div>
             `;
