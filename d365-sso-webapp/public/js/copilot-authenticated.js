@@ -1,26 +1,28 @@
 /**
- * Intégration Copilot avec Client Credentials Flow
- * PLUS SIMPLE - FONCTIONNE À COUP SÛR !
+ * Intégration Copilot SANS authentification Power Platform
  */
 
 class CopilotAuthenticated {
     constructor() {
         this.isInitialized = false;
-        this.conversationId = null;
         
         this.config = {
+            // Bot sans authentification (depuis Settings → Security)
+            botId: '7ca13de3-fabc-4164-8f26-904f90e6eff6',
+            schemaName: 'cr288_agentBabilou',
             environmentId: '308d8cf6-baa8-eba2-8a15-8afc891fddf9',
-            botId: 'c161b222-844d-46f7-8585-41043754125e', // Bot avec auth Microsoft
-            // L'endpoint API Power Platform (pas Dataverse)
+            
+            // Endpoint pour bot NON-AUTHENTIFIÉ
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
-            apiVersion: '2022-03-01-preview',
-            tokenEndpoint: '/api/get-powerplatform-token'
+            apiVersion: '2022-03-01-preview'
         };
     }
 
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (CLIENT CREDENTIALS) ===");
+            console.log("🤖 === INITIALISATION COPILOT (NO AUTH - SIMPLE) ===");
+            console.log("   Bot ID:", this.config.botId);
+            console.log("   Schema:", this.config.schemaName);
 
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
@@ -33,17 +35,13 @@ class CopilotAuthenticated {
             console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            const accessToken = await this.getAccessToken();
-            if (!accessToken) {
-                throw new Error("Impossible d'obtenir le token Power Platform");
-            }
+            // Obtenir le token Direct Line (sans auth Power Platform !)
+            const directLineToken = await this.getDirectLineToken();
+            
+            console.log("✅ Token Direct Line obtenu");
 
-            console.log("✅ Token Power Platform obtenu");
-
-            await this.createConversation(accessToken);
-            console.log("✅ Conversation créée:", this.conversationId);
-
-            await this.initializeWebChat(accessToken);
+            // Initialiser le Web Chat
+            await this.initializeWebChat(directLineToken);
 
             this.isInitialized = true;
             console.log("✅ === COPILOT INITIALISÉ AVEC SUCCÈS ===");
@@ -55,61 +53,40 @@ class CopilotAuthenticated {
         }
     }
 
-    async getAccessToken() {
+    async getDirectLineToken() {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN (CLIENT CREDENTIALS) ===");
-            console.log("📍 Endpoint:", this.config.tokenEndpoint);
+            console.log("🔑 === RÉCUPÉRATION TOKEN DIRECT LINE ===");
             
-            // Récupérer le token utilisateur (pour l'identité)
-            console.log("⏳ Récupération du token utilisateur...");
-            const userToken = await authManager.getAccessToken();
+            // Endpoint Direct Line pour bot NON-AUTHENTIFIÉ
+            const tokenUrl = `${this.config.apiEndpoint}/powervirtualagents/botsbyschema/${this.config.schemaName}/directline/token?api-version=${this.config.apiVersion}`;
             
-            if (!userToken) {
-                console.warn("⚠️  Pas de token utilisateur, continuons quand même");
-            } else {
-                console.log("✅ Token utilisateur obtenu");
-            }
+            console.log("📍 URL:", tokenUrl);
+            console.log("⏳ Appel à l'API Direct Line...");
             
-            console.log("⏳ Appel à l'Azure Function...");
-            
-            const response = await fetch(this.config.tokenEndpoint, {
+            const response = await fetch(tokenUrl, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': userToken ? `Bearer ${userToken}` : ''
+                    'Content-Type': 'application/json'
                 }
             });
 
             console.log("📡 Réponse reçue:", response.status, response.statusText);
 
             if (!response.ok) {
-                let errorMessage;
-                
-                try {
-                    const errorData = await response.json();
-                    console.error("❌ Erreur API:", errorData);
-                    errorMessage = errorData.error || errorData.message || `Erreur HTTP ${response.status}`;
-                } catch (jsonError) {
-                    const errorText = await response.text();
-                    console.error("❌ Erreur API (texte):", errorText);
-                    errorMessage = errorText || `Erreur HTTP ${response.status}`;
-                }
-                
-                throw new Error(errorMessage);
+                const errorText = await response.text();
+                console.error("❌ Erreur API:", errorText);
+                throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
             }
 
             const data = await response.json();
             
-            if (!data.success || !data.token) {
-                throw new Error("Réponse invalide de l'API");
+            if (!data.token) {
+                throw new Error("Token manquant dans la réponse");
             }
 
-            console.log("✅ Token Power Platform reçu !");
-            if (data.scopes) console.log("   Scopes:", data.scopes);
-            if (data.expiresOn) console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
-            if (data.user) console.log("   Utilisateur:", data.user.email);
-            
-            console.log("✅ === FIN RÉCUPÉRATION TOKEN - SUCCÈS ===");
+            console.log("✅ Token Direct Line reçu !");
+            console.log("   Conversation ID:", data.conversationId || 'N/A');
+            console.log("   Expire:", data.expires_in ? `dans ${data.expires_in}s` : 'N/A');
             
             return data.token;
 
@@ -126,61 +103,25 @@ class CopilotAuthenticated {
         }
     }
 
-    async createConversation(accessToken) {
-        try {
-            const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations`;
-            const params = new URLSearchParams({
-                'api-version': this.config.apiVersion
-            });
-
-            console.log("📞 Création de la conversation...");
-
-            // Récupérer les infos utilisateur pour les passer au bot
-            const account = authManager.getAccount();
-            
-            const response = await fetch(`${conversationUrl}?${params}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    locale: 'fr-FR',
-                    // Passer les infos utilisateur au bot
-                    context: {
-                        userName: account.name,
-                        userEmail: account.username,
-                        userId: account.localAccountId
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("❌ Erreur API:", response.status, errorText);
-                throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
-            this.conversationId = data.conversationId;
-
-            console.log("✅ Conversation créée avec succès");
-            console.log("   Conversation ID:", this.conversationId);
-            console.log("   Utilisateur:", account.name);
-
-        } catch (error) {
-            console.error("❌ Erreur lors de la création de la conversation:", error);
-            throw error;
-        }
-    }
-
-    async initializeWebChat(accessToken) {
+    async initializeWebChat(directLineToken) {
         try {
             console.log("🎨 Initialisation du Web Chat...");
             
-            const directLine = this.createPowerPlatformAdapter(accessToken);
             const account = authManager.getAccount();
+            
+            // Créer la connexion Direct Line
+            const directLine = window.WebChat.createDirectLine({
+                token: directLineToken
+            });
+
+            // Préparer les informations utilisateur à passer au bot
+            const userContext = {
+                userId: account.localAccountId,
+                userName: account.name,
+                userEmail: account.username
+            };
+
+            console.log("👤 Informations utilisateur:", userContext);
 
             const styleOptions = {
                 accent: '#0078d4',
@@ -201,9 +142,29 @@ class CopilotAuthenticated {
                 sendBoxTextColor: '#000000'
             };
 
+            // Store pour passer les données utilisateur au bot
+            const store = window.WebChat.createStore({}, ({ dispatch }) => next => action => {
+                // Lors de la connexion, envoyer les infos utilisateur au bot
+                if (action.type === 'DIRECT_LINE/CONNECT_FULFILLED') {
+                    console.log("📤 Envoi des informations utilisateur au bot...");
+                    
+                    // Envoyer un événement avec les infos utilisateur
+                    dispatch({
+                        type: 'WEB_CHAT/SEND_EVENT',
+                        payload: {
+                            name: 'webchat/join',
+                            value: userContext
+                        }
+                    });
+                }
+                return next(action);
+            });
+
+            // Rendre le Web Chat
             window.WebChat.renderWebChat(
                 {
                     directLine: directLine,
+                    store: store,
                     userID: account.localAccountId,
                     username: account.name,
                     locale: 'fr-FR',
@@ -213,23 +174,13 @@ class CopilotAuthenticated {
             );
 
             console.log("✅ Web Chat initialisé");
+            console.log("   User ID:", account.localAccountId);
+            console.log("   Username:", account.name);
 
         } catch (error) {
             console.error("❌ Erreur lors de l'initialisation du Web Chat:", error);
             throw error;
         }
-    }
-
-    createPowerPlatformAdapter(accessToken) {
-        const conversationUrl = `${this.config.apiEndpoint}/copilotstudio/dataverse-backed/authenticated/bots/${this.config.botId}/conversations/${this.conversationId}`;
-        
-        console.log("🔌 Création de l'adaptateur Direct Line");
-        
-        return window.WebChat.createDirectLine({
-            domain: conversationUrl,
-            token: accessToken,
-            webSocket: false
-        });
     }
 
     getInitials(name) {
@@ -253,11 +204,10 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Variables d'environnement Azure Static Web App configurées</li>
-                            <li>Client Secret valide (App #2)</li>
-                            <li>Permissions Power Platform accordées à App #2</li>
-                            <li>Admin consent accordé</li>
-                            <li>Vérifiez la console (F12) et les logs Azure Function</li>
+                            <li>Le bot existe dans Copilot Studio</li>
+                            <li>Le bot est publié</li>
+                            <li>L'environnement est correct</li>
+                            <li>Vérifiez la console (F12) pour plus de détails</li>
                         </ul>
                     </div>
                     <button onclick="location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
