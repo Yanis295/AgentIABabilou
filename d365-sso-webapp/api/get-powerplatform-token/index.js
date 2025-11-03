@@ -69,15 +69,16 @@ module.exports = async function (context, req) {
         const confidentialClient = new msal.ConfidentialClientApplication(confidentialClientConfig);
 
         // 4. Obtenir le token avec Client Credentials Flow
-        const powerPlatformScope = `${process.env.POWER_PLATFORM_ENDPOINT}/.default`;
+        // IMPORTANT: Demander le token pour l'API Power Platform, pas juste Dataverse
+        const powerPlatformApiScope = `${process.env.POWER_PLATFORM_ENDPOINT}/.default`;
         
         const clientCredentialRequest = {
-            scopes: [powerPlatformScope],
+            scopes: [powerPlatformApiScope],
             skipCache: false
         };
 
         context.log('⏳ Appel à acquireTokenByClientCredential...');
-        context.log('   Scope:', powerPlatformScope);
+        context.log('   Scope:', powerPlatformApiScope);
         
         const response = await confidentialClient.acquireTokenByClientCredential(clientCredentialRequest);
         
@@ -86,7 +87,7 @@ module.exports = async function (context, req) {
         }
 
         context.log('✅ ===== TOKEN POWER PLATFORM OBTENU ! =====');
-        context.log('   Scopes:', response.scopes || [powerPlatformScope]);
+        context.log('   Scopes:', response.scopes || [powerPlatformApiScope]);
         context.log('   Expire à:', new Date(response.expiresOn).toISOString());
         context.log('   Longueur token:', response.accessToken.length);
         if (userInfo) {
@@ -99,7 +100,7 @@ module.exports = async function (context, req) {
             success: true,
             token: response.accessToken,
             expiresOn: response.expiresOn,
-            scopes: response.scopes || [powerPlatformScope],
+            scopes: response.scopes || [powerPlatformApiScope],
             user: userInfo // Infos utilisateur pour personnalisation
         };
 
