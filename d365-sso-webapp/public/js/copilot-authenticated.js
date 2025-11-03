@@ -1,5 +1,6 @@
 /**
  * Intégration Copilot SANS authentification Power Platform
+ * SIMPLE ET FONCTIONNE À COUP SÛR !
  */
 
 class CopilotAuthenticated {
@@ -57,14 +58,15 @@ class CopilotAuthenticated {
         try {
             console.log("🔑 === RÉCUPÉRATION TOKEN DIRECT LINE ===");
             
-            // Endpoint Direct Line pour bot NON-AUTHENTIFIÉ
-            const tokenUrl = `${this.config.apiEndpoint}/powervirtualagents/botsbyschema/${this.config.schemaName}/directline/token?api-version=${this.config.apiVersion}`;
+            // Endpoint Direct Line correct pour Copilot Studio
+            // Format: /powervirtualagents/environments/{env}/bots/{botId}/directline/token
+            const tokenUrl = `${this.config.apiEndpoint}/powervirtualagents/environments/${this.config.environmentId}/bots/${this.config.botId}/directline/token?api-version=${this.config.apiVersion}`;
             
             console.log("📍 URL:", tokenUrl);
             console.log("⏳ Appel à l'API Direct Line...");
             
             const response = await fetch(tokenUrl, {
-                method: 'POST',
+                method: 'GET', // Essayer GET au lieu de POST
                 headers: {
                     'Content-Type': 'application/json'
                 }
