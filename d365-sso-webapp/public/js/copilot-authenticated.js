@@ -1,6 +1,6 @@
 /**
  * Intégration Copilot avec authentification via Azure Function OBO
- * VERSION CORRIGÉE - Avec forceRefresh pour obtenir le nouveau token
+ * VERSION DEBUG - Pour analyser le token JWT
  */
 
 class CopilotAuthenticated {
@@ -55,6 +55,29 @@ class CopilotAuthenticated {
         }
     }
 
+    /**
+     * NOUVELLE FONCTION : Décoder un JWT sans vérifier la signature
+     */
+    decodeJWT(token) {
+        try {
+            const parts = token.split('.');
+            if (parts.length !== 3) {
+                return null;
+            }
+            
+            // Décoder le payload (partie 2)
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            
+            // Décoder le header (partie 1)
+            const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
+            
+            return { header, payload };
+        } catch (error) {
+            console.error("Erreur décodage JWT:", error);
+            return null;
+        }
+    }
+
     async getAccessTokenViaOBO() {
         try {
             console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO ===");
@@ -63,17 +86,60 @@ class CopilotAuthenticated {
             console.log("⏳ Récupération du token utilisateur...");
             
             // ⚠️ IMPORTANT : Utiliser forceRefresh = true pour invalider le cache
-            // et obtenir un nouveau token avec le scope access_as_user
             const userToken = await authManager.getAccessToken([
                 'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
-            ], true); // ⬅️ MODIFICATION : forceRefresh = true
+            ], true);
             
             if (!userToken) {
                 throw new Error("Impossible d'obtenir le token utilisateur");
             }
             
-            console.log("✅ Token utilisateur obtenu (avec nouveau scope)");
+            console.log("✅ Token utilisateur obtenu (avec forceRefresh)");
             console.log(`   Preview: ${userToken.substring(0, 50)}...`);
+            
+            // 🔍 NOUVEAU : Décoder et analyser le token
+            console.log("🔍 === ANALYSE DU TOKEN JWT ===");
+            const decoded = this.decodeJWT(userToken);
+            if (decoded) {
+                console.log("📋 Header:");
+                console.log("   typ:", decoded.header.typ);
+                console.log("   alg:", decoded.header.alg);
+                console.log("   kid:", decoded.header.kid);
+                
+                console.log("📋 Payload:");
+                console.log("   aud (audience):", decoded.payload.aud);
+                console.log("   iss (issuer):", decoded.payload.iss);
+                console.log("   scp (scopes):", decoded.payload.scp);
+                console.log("   appid:", decoded.payload.appid);
+                console.log("   ver (version):", decoded.payload.ver);
+                console.log("   exp (expire):", new Date(decoded.payload.exp * 1000).toISOString());
+                
+                // Vérification critique
+                console.log("🎯 === VÉRIFICATIONS ===");
+                const expectedAudience = "api://fa67c7ea-67f2-4175-9e81-01afd04d64f8";
+                if (decoded.payload.aud === expectedAudience) {
+                    console.log("✅ Audience CORRECTE:", decoded.payload.aud);
+                } else {
+                    console.warn("⚠️  AUDIENCE INCORRECTE !");
+                    console.warn("   Attendu:", expectedAudience);
+                    console.warn("   Reçu:", decoded.payload.aud);
+                }
+                
+                if (decoded.payload.scp && decoded.payload.scp.includes('access_as_user')) {
+                    console.log("✅ Scope 'access_as_user' PRÉSENT");
+                } else {
+                    console.warn("⚠️  Scope 'access_as_user' ABSENT !");
+                    console.warn("   Scopes reçus:", decoded.payload.scp);
+                }
+                
+                if (decoded.header.alg === 'RS256') {
+                    console.log("✅ Algorithme RS256 (correct)");
+                } else {
+                    console.warn("⚠️  Algorithme inhabituel:", decoded.header.alg);
+                }
+            } else {
+                console.error("❌ Impossible de décoder le token");
+            }
             
             console.log("⏳ Appel à l'Azure Function OBO...");
             
@@ -88,7 +154,6 @@ class CopilotAuthenticated {
             console.log("📡 Réponse reçue:", response.status, response.statusText);
 
             if (!response.ok) {
-                // Essayer de parser la réponse comme JSON, sinon utiliser le texte brut
                 let errorMessage;
                 let errorDetails = null;
                 
@@ -98,13 +163,11 @@ class CopilotAuthenticated {
                     errorMessage = errorData.error || errorData.message || `Erreur HTTP ${response.status}`;
                     errorDetails = errorData;
                 } catch (jsonError) {
-                    // Si ce n'est pas du JSON, récupérer le texte brut
                     const errorText = await response.text();
                     console.error("❌ Erreur API (Texte brut):", errorText);
                     errorMessage = errorText || `Erreur HTTP ${response.status}`;
                 }
                 
-                // Conseils selon le type d'erreur
                 if (response.status === 500) {
                     console.error("");
                     console.error("💡 Erreur 500 - Problème côté serveur");
@@ -132,7 +195,6 @@ class CopilotAuthenticated {
             if (data.expiresOn) console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
             console.log(`   Preview: ${data.token.substring(0, 50)}...`);
             
-            // Debug info si disponible
             if (data.debug) {
                 console.log("🔍 Infos debug:", data.debug);
             }
