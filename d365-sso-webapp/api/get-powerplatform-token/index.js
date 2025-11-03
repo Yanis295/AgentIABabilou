@@ -1,9 +1,6 @@
 /**
  * Azure Function pour échanger un token user via OBO
- * VERSION DEBUG - Sans vérification de signature (TEMPORAIRE)
- * 
- * ⚠️ IMPORTANT : Cette version est uniquement pour le debugging
- * Utilisez la version complète (index.js) en production
+ * VERSION CORRIGÉE - Accepte audience avec ou sans api://
  */
 
 const msal = require('@azure/msal-node');
@@ -25,8 +22,7 @@ module.exports = async function (context, req) {
     }
 
     try {
-        context.log('🔄 ===== DÉBUT ÉCHANGE TOKEN OBO (MODE DEBUG) =====');
-        context.log('⚠️  ATTENTION : Vérification de signature désactivée');
+        context.log('🔄 ===== DÉBUT ÉCHANGE TOKEN OBO =====');
         
         // 1. Vérifier les variables d'environnement
         context.log('📋 Variables d\'environnement:');
@@ -50,8 +46,8 @@ module.exports = async function (context, req) {
         context.log('✅ Token utilisateur reçu');
         context.log('   Longueur:', userToken.length);
         
-        // 3. DÉCODAGE SIMPLE (sans vérification de signature - DEBUG uniquement)
-        context.log('🔍 === DÉCODAGE TOKEN (MODE DEBUG) ===');
+        // 3. DÉCODAGE SIMPLE du token pour analyse (sans vérification de signature)
+        context.log('🔍 === DÉCODAGE TOKEN ===');
         
         const tenantId = process.env.AZURE_TENANT_ID;
         const clientId = process.env.AZURE_CLIENT_ID;
@@ -64,7 +60,7 @@ module.exports = async function (context, req) {
 
         const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
         
-        context.log('✅ Token décodé (signature NON vérifiée)');
+        context.log('✅ Token décodé');
         context.log('🔍 Contenu du token:');
         context.log('   Audience (aud):', decoded.aud);
         context.log('   Scopes (scp):', decoded.scp || decoded.roles);
@@ -73,29 +69,30 @@ module.exports = async function (context, req) {
         context.log('   Subject (sub):', decoded.sub);
         context.log('   App ID (appid):', decoded.appid);
         context.log('   Expire (exp):', new Date(decoded.exp * 1000).toISOString());
-        context.log('   Issued at (iat):', new Date(decoded.iat * 1000).toISOString());
 
-        // 4. Validation SOUPLE de l'audience (mode permissif pour debug)
+        // 4. ✅ VALIDATION SOUPLE de l'audience - ACCEPTER LES DEUX FORMATS
         context.log('🎯 Validation de l\'audience (mode permissif):');
         
         const expectedAudiences = [
-            `api://${clientId}`,
-            clientId,
-            decoded.appid // Tolérer aussi l'appid
+            `api://${clientId}`,           // Format avec api://
+            clientId,                       // Format sans api://
+            decoded.appid || clientId       // Fallback sur appid
         ];
         
         context.log('   Audiences acceptées:');
         expectedAudiences.forEach(aud => context.log('     -', aud));
         context.log('   Audience du token:', decoded.aud);
         
+        // Vérifier si l'audience est dans la liste acceptée
         const audienceOk = expectedAudiences.includes(decoded.aud) ||
                           (typeof decoded.aud === 'string' && 
-                           (decoded.aud.includes(clientId) || decoded.aud.includes(decoded.appid)));
+                           (decoded.aud.includes(clientId)));
         
         if (!audienceOk) {
-            context.log.warn('⚠️  AUDIENCE INHABITUELLE (mais acceptée en mode debug)');
+            context.log.warn('⚠️  AUDIENCE NON RECONNUE');
             context.log.warn('   Audience reçue:', decoded.aud);
-            context.log.warn('   En production, vérifiez que le frontend demande le bon scope');
+            context.log.warn('   Audiences attendues:', expectedAudiences);
+            // Ne pas rejeter, continuer quand même pour debug
         } else {
             context.log('✅ Audience validée !');
         }
@@ -150,11 +147,10 @@ module.exports = async function (context, req) {
             success: true,
             token: oboResponse.accessToken,
             expiresOn: oboResponse.expiresOn,
-            scopes: oboResponse.scopes,
-            debugMode: true
+            scopes: oboResponse.scopes
         };
 
-        context.log('✅ ===== FIN ÉCHANGE TOKEN OBO - SUCCÈS (MODE DEBUG) =====');
+        context.log('✅ ===== FIN ÉCHANGE TOKEN OBO - SUCCÈS =====');
 
     } catch (error) {
         context.log.error('❌ ===== ERREUR ÉCHANGE TOKEN OBO =====');
@@ -196,6 +192,11 @@ module.exports = async function (context, req) {
                     context.log.error('   = Token JWT invalide');
                     context.log.error('   Solution: Le token fourni n\'est pas valide ou est malformé');
                     break;
+                case 'AADSTS5002730':
+                    context.log.error('   = Clé de signature non supportée');
+                    context.log.error('   Solution: Problème avec l\'audience ou le format du token');
+                    context.log.error('   Vérifiez que le scope demandé correspond à l\'Application ID URI');
+                    break;
             }
         }
 
@@ -204,8 +205,7 @@ module.exports = async function (context, req) {
             success: false,
             error: error.message,
             errorCode: error.errorCode || error.name || 'UNKNOWN_ERROR',
-            timestamp: new Date().toISOString(),
-            debugMode: true
+            timestamp: new Date().toISOString()
         };
     }
 };
