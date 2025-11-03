@@ -1,6 +1,6 @@
 /**
  * Intégration Copilot avec authentification via Azure Function OBO
- * VERSION DEBUG - Pour analyser le token JWT
+ * ARCHITECTURE 2 APP REGISTRATIONS
  */
 
 class CopilotAuthenticated {
@@ -8,7 +8,6 @@ class CopilotAuthenticated {
         this.isInitialized = false;
         this.conversationId = null;
         
-        // Configuration du bot authentifié
         this.config = {
             environmentId: '308d8cf6-baa8-eba2-8a15-8afc891fddf9',
             botId: 'cr288_chatbotAgentIaBabilou',
@@ -20,7 +19,9 @@ class CopilotAuthenticated {
 
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (OBO FLOW) ===");
+            console.log("🤖 === INITIALISATION COPILOT (OBO - 2 APPS) ===");
+            console.log("   App #1 (Frontend):", msalConfig.auth.clientId);
+            console.log("   App #2 (Backend):", backendApiConfig.backendClientId);
 
             if (!window.WebChat) {
                 throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
@@ -55,90 +56,48 @@ class CopilotAuthenticated {
         }
     }
 
-    /**
-     * NOUVELLE FONCTION : Décoder un JWT sans vérifier la signature
-     */
-    decodeJWT(token) {
-        try {
-            const parts = token.split('.');
-            if (parts.length !== 3) {
-                return null;
-            }
-            
-            // Décoder le payload (partie 2)
-            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-            
-            // Décoder le header (partie 1)
-            const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
-            
-            return { header, payload };
-        } catch (error) {
-            console.error("Erreur décodage JWT:", error);
-            return null;
-        }
-    }
-
     async getAccessTokenViaOBO() {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO ===");
+            console.log("🔑 === RÉCUPÉRATION TOKEN VIA OBO (2 APPS) ===");
             console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
-            console.log("⏳ Récupération du token utilisateur...");
+            console.log("⏳ Récupération du token pour le backend (App #2)...");
+            console.log("   Scope demandé:", backendApiConfig.scopes[0]);
             
-            // ⚠️ IMPORTANT : Utiliser forceRefresh = true pour invalider le cache
-            const userToken = await authManager.getAccessToken([
-                'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
-            ], true);
+            // ⚠️ CRITIQUE : Demander un token pour App #2 (Backend)
+            const userToken = await authManager.getAccessToken(
+                backendApiConfig.scopes,  // ⬅️ Scope pour App #2
+                true // forceRefresh
+            );
             
             if (!userToken) {
-                throw new Error("Impossible d'obtenir le token utilisateur");
+                throw new Error("Impossible d'obtenir le token backend");
             }
             
-            console.log("✅ Token utilisateur obtenu (avec forceRefresh)");
+            console.log("✅ Token backend obtenu");
             console.log(`   Preview: ${userToken.substring(0, 50)}...`);
             
-            // 🔍 NOUVEAU : Décoder et analyser le token
-            console.log("🔍 === ANALYSE DU TOKEN JWT ===");
+            // Décoder et vérifier l'audience
             const decoded = this.decodeJWT(userToken);
             if (decoded) {
-                console.log("📋 Header:");
-                console.log("   typ:", decoded.header.typ);
-                console.log("   alg:", decoded.header.alg);
-                console.log("   kid:", decoded.header.kid);
+                console.log("🔍 === VÉRIFICATION TOKEN ===");
+                console.log("   Audience (aud):", decoded.payload.aud);
+                console.log("   Scopes (scp):", decoded.payload.scp);
+                console.log("   Version (ver):", decoded.payload.ver);
+                console.log("   Issuer (iss):", decoded.payload.iss);
                 
-                console.log("📋 Payload:");
-                console.log("   aud (audience):", decoded.payload.aud);
-                console.log("   iss (issuer):", decoded.payload.iss);
-                console.log("   scp (scopes):", decoded.payload.scp);
-                console.log("   appid:", decoded.payload.appid);
-                console.log("   ver (version):", decoded.payload.ver);
-                console.log("   exp (expire):", new Date(decoded.payload.exp * 1000).toISOString());
-                
-                // Vérification critique
-                console.log("🎯 === VÉRIFICATIONS ===");
-                const expectedAudience = "api://fa67c7ea-67f2-4175-9e81-01afd04d64f8";
-                if (decoded.payload.aud === expectedAudience) {
-                    console.log("✅ Audience CORRECTE:", decoded.payload.aud);
+                // Vérifier que l'audience est correcte
+                const expectedAud = `api://${backendApiConfig.backendClientId}`;
+                if (decoded.payload.aud === expectedAud) {
+                    console.log("✅ Audience CORRECTE !");
+                    console.log("   Attendu:", expectedAud);
+                    console.log("   Reçu:", decoded.payload.aud);
                 } else {
                     console.warn("⚠️  AUDIENCE INCORRECTE !");
-                    console.warn("   Attendu:", expectedAudience);
+                    console.warn("   Attendu:", expectedAud);
                     console.warn("   Reçu:", decoded.payload.aud);
+                    console.warn("   Vérifiez que backendApiConfig.backendClientId est correct");
                 }
-                
-                if (decoded.payload.scp && decoded.payload.scp.includes('access_as_user')) {
-                    console.log("✅ Scope 'access_as_user' PRÉSENT");
-                } else {
-                    console.warn("⚠️  Scope 'access_as_user' ABSENT !");
-                    console.warn("   Scopes reçus:", decoded.payload.scp);
-                }
-                
-                if (decoded.header.alg === 'RS256') {
-                    console.log("✅ Algorithme RS256 (correct)");
-                } else {
-                    console.warn("⚠️  Algorithme inhabituel:", decoded.header.alg);
-                }
-            } else {
-                console.error("❌ Impossible de décoder le token");
             }
             
             console.log("⏳ Appel à l'Azure Function OBO...");
@@ -155,30 +114,28 @@ class CopilotAuthenticated {
 
             if (!response.ok) {
                 let errorMessage;
-                let errorDetails = null;
                 
                 try {
                     const errorData = await response.json();
                     console.error("❌ Erreur API (JSON):", errorData);
                     errorMessage = errorData.error || errorData.message || `Erreur HTTP ${response.status}`;
-                    errorDetails = errorData;
+                    
+                    // Aide au dépannage
+                    if (response.status === 500) {
+                        console.error("");
+                        console.error("💡 Erreur 500 - Vérifications :");
+                        console.error("   1. Variables d'environnement Azure Static Web App");
+                        console.error("      - AZURE_CLIENT_ID = d0e218fc-521d-443c-b1b3-0c5036834111");
+                        console.error("      - AZURE_CLIENT_SECRET = [Votre secret]");
+                        console.error("      - AZURE_TENANT_ID = ee7b4ccb-8e30-435c-9368-1fce958df645");
+                        console.error("   2. Client Secret valide et non expiré");
+                        console.error("   3. Permissions Power Platform accordées à App #2");
+                        console.error("   4. Admin consent accordé");
+                    }
                 } catch (jsonError) {
                     const errorText = await response.text();
                     console.error("❌ Erreur API (Texte brut):", errorText);
                     errorMessage = errorText || `Erreur HTTP ${response.status}`;
-                }
-                
-                if (response.status === 500) {
-                    console.error("");
-                    console.error("💡 Erreur 500 - Problème côté serveur");
-                    console.error("   Vérifiez:");
-                    console.error("   1. Les variables d'environnement dans Azure Static Web App");
-                    console.error("   2. Les logs de l'Azure Function");
-                    console.error("   3. Que le Client Secret est valide");
-                } else if (response.status === 404) {
-                    console.error("");
-                    console.error("💡 Erreur 404 - Azure Function introuvable");
-                    console.error("   Vérifiez que la Function est déployée");
                 }
                 
                 throw new Error(errorMessage);
@@ -195,10 +152,6 @@ class CopilotAuthenticated {
             if (data.expiresOn) console.log("   Expire:", new Date(data.expiresOn).toLocaleString());
             console.log(`   Preview: ${data.token.substring(0, 50)}...`);
             
-            if (data.debug) {
-                console.log("🔍 Infos debug:", data.debug);
-            }
-            
             console.log("✅ === FIN RÉCUPÉRATION TOKEN OBO - SUCCÈS ===");
             
             return data.token;
@@ -213,6 +166,30 @@ class CopilotAuthenticated {
             }
             
             throw new Error(`Impossible d'obtenir le token: ${error.message}`);
+        }
+    }
+
+    /**
+     * Décoder un JWT (sans vérifier la signature)
+     */
+    decodeJWT(token) {
+        try {
+            const parts = token.split('.');
+            if (parts.length !== 3) return null;
+            
+            // Remplacer les caractères URL-safe
+            const base64Url = parts[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            
+            const payload = JSON.parse(atob(base64));
+            
+            const headerBase64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
+            const header = JSON.parse(atob(headerBase64));
+            
+            return { header, payload };
+        } catch (error) {
+            console.error("Erreur décodage JWT:", error);
+            return null;
         }
     }
 
@@ -335,13 +312,13 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Scope 'access_as_user' ajouté dans API permissions d'Azure AD</li>
-                            <li>Consentement administrateur accordé</li>
-                            <li>Variables d'environnement configurées dans Azure Static Web App</li>
-                            <li>Client Secret valide et non expiré</li>
-                            <li>Azure Function déployée</li>
-                            <li>Cache du navigateur effacé (Ctrl+Shift+Del)</li>
-                            <li>Vérifiez la console (F12) et les logs Azure Function</li>
+                            <li>App #1 a la permission vers App #2</li>
+                            <li>Admin consent accordé</li>
+                            <li>Variables d'environnement Azure Static Web App configurées</li>
+                            <li>Client Secret valide (App #2)</li>
+                            <li>Permissions Power Platform accordées à App #2</li>
+                            <li>Cache navigateur effacé (Ctrl+Shift+Del)</li>
+                            <li>Vérifiez la console (F12) pour les détails</li>
                         </ul>
                     </div>
                     <button onclick="sessionStorage.clear(); localStorage.clear(); location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
