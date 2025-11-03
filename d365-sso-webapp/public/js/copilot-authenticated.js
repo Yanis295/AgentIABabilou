@@ -10,7 +10,7 @@ class CopilotAuthenticated {
         
         this.config = {
             environmentId: '308d8cf6-baa8-eba2-8a15-8afc891fddf9',
-            botId: 'cr288_chatbotAgentIaBabilou',
+            botId: 'c161b222-844d-46f7-8585-41043754125e', // Bot avec auth Microsoft
             // L'endpoint API Power Platform (pas Dataverse)
             apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
             apiVersion: '2022-03-01-preview',
