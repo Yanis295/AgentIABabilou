@@ -1,6 +1,6 @@
 /**
  * Intégration Copilot avec authentification via Azure Function OBO
- * VERSION CORRIGÉE - Meilleure gestion des erreurs
+ * VERSION CORRIGÉE - Avec forceRefresh pour obtenir le nouveau token
  */
 
 class CopilotAuthenticated {
@@ -61,17 +61,18 @@ class CopilotAuthenticated {
             console.log("📍 Endpoint OBO:", this.config.oboEndpoint);
             
             console.log("⏳ Récupération du token utilisateur...");
-            // TEMPORAIRE : Utiliser User.Read qui fonctionne toujours
-            // Au lieu de api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user
+            
+            // ⚠️ IMPORTANT : Utiliser forceRefresh = true pour invalider le cache
+            // et obtenir un nouveau token avec le scope access_as_user
             const userToken = await authManager.getAccessToken([
                 'api://fa67c7ea-67f2-4175-9e81-01afd04d64f8/access_as_user'
-            ]);
+            ], true); // ⬅️ MODIFICATION : forceRefresh = true
             
             if (!userToken) {
                 throw new Error("Impossible d'obtenir le token utilisateur");
             }
             
-            console.log("✅ Token utilisateur obtenu");
+            console.log("✅ Token utilisateur obtenu (avec nouveau scope)");
             console.log(`   Preview: ${userToken.substring(0, 50)}...`);
             
             console.log("⏳ Appel à l'Azure Function OBO...");
@@ -272,15 +273,17 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                            <li>Scope 'access_as_user' ajouté dans API permissions d'Azure AD</li>
+                            <li>Consentement administrateur accordé</li>
                             <li>Variables d'environnement configurées dans Azure Static Web App</li>
                             <li>Client Secret valide et non expiré</li>
                             <li>Azure Function déployée</li>
-                            <li>Permissions API accordées avec consentement admin</li>
+                            <li>Cache du navigateur effacé (Ctrl+Shift+Del)</li>
                             <li>Vérifiez la console (F12) et les logs Azure Function</li>
                         </ul>
                     </div>
-                    <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        Recharger la page
+                    <button onclick="sessionStorage.clear(); localStorage.clear(); location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Effacer le cache et recharger
                     </button>
                 </div>
             `;
