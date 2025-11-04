@@ -10,7 +10,7 @@ class CopilotAuthenticated {
         
         this.config = {
             // URL de base de l'iframe Copilot
-            baseUrl: 'https://copilotstudio.microsoft.com/environments/308d8cf6-baa8-eba2-8a15-8afc891fddf9/bots/cr288_agentBabilou/webchat',
+            baseUrl: 'https://copilotstudio.microsoft.com/environments/308d8cf6-baa8-eba2-8a15-8afc891fddf9/bots/cr288_assistantBabilou/webchat',
             version: '2'
         };
     }
