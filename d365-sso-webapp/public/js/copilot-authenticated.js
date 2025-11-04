@@ -1,6 +1,7 @@
 /**
- * Intégration Copilot SANS authentification Power Platform
+ * Intégration Copilot Studio via iframe
  * SIMPLE ET FONCTIONNE À COUP SÛR !
+ * L'utilisateur est identifié via les paramètres URL
  */
 
 class CopilotAuthenticated {
@@ -8,41 +9,34 @@ class CopilotAuthenticated {
         this.isInitialized = false;
         
         this.config = {
-            // Bot sans authentification (depuis Settings → Security)
-            botId: '7ca13de3-fabc-4164-8f26-904f90e6eff6',
-            schemaName: 'cr288_agentBabilou',
-            environmentId: '308d8cf6-baa8-eba2-8a15-8afc891fddf9',
-            
-            // Endpoint pour bot NON-AUTHENTIFIÉ
-            apiEndpoint: 'https://308d8cf6baa8eba28a158afc891fdd.f9.environment.api.powerplatform.com',
-            apiVersion: '2022-03-01-preview'
+            // URL de base de l'iframe Copilot
+            baseUrl: 'https://copilotstudio.microsoft.com/environments/308d8cf6-baa8-eba2-8a15-8afc891fddf9/bots/cr288_agentBabilou/webchat',
+            version: '2'
         };
     }
 
     async initialize() {
         try {
-            console.log("🤖 === INITIALISATION COPILOT (NO AUTH - SIMPLE) ===");
-            console.log("   Bot ID:", this.config.botId);
-            console.log("   Schema:", this.config.schemaName);
-
-            if (!window.WebChat) {
-                throw new Error("Bot Framework Web Chat SDK n'est pas chargé");
-            }
+            console.log("🤖 === INITIALISATION COPILOT (IFRAME + USER INFO) ===");
 
             if (!authManager.isSignedIn()) {
                 throw new Error("Utilisateur non connecté");
             }
 
-            console.log("✅ Web Chat SDK chargé");
             console.log("✅ Utilisateur connecté");
 
-            // Obtenir le token Direct Line (sans auth Power Platform !)
-            const directLineToken = await this.getDirectLineToken();
-            
-            console.log("✅ Token Direct Line obtenu");
+            // Récupérer les informations utilisateur
+            const account = authManager.getAccount();
+            const userInfo = {
+                userId: account.localAccountId,
+                userName: account.name,
+                userEmail: account.username
+            };
 
-            // Initialiser le Web Chat
-            await this.initializeWebChat(directLineToken);
+            console.log("👤 Informations utilisateur:", userInfo);
+
+            // Créer l'iframe avec les infos utilisateur
+            this.createCopilotIframe(userInfo);
 
             this.isInitialized = true;
             console.log("✅ === COPILOT INITIALISÉ AVEC SUCCÈS ===");
@@ -54,144 +48,95 @@ class CopilotAuthenticated {
         }
     }
 
-    async getDirectLineToken() {
+    createCopilotIframe(userInfo) {
         try {
-            console.log("🔑 === RÉCUPÉRATION TOKEN DIRECT LINE ===");
+            console.log("🎨 Création de l'iframe Copilot...");
             
-            // Endpoint Direct Line correct pour Copilot Studio
-            // Format: /powervirtualagents/environments/{env}/bots/{botId}/directline/token
-            const tokenUrl = `${this.config.apiEndpoint}/powervirtualagents/environments/${this.config.environmentId}/bots/${this.config.botId}/directline/token?api-version=${this.config.apiVersion}`;
-            
-            console.log("📍 URL:", tokenUrl);
-            console.log("⏳ Appel à l'API Direct Line...");
-            
-            const response = await fetch(tokenUrl, {
-                method: 'GET', // Essayer GET au lieu de POST
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+            // Construire l'URL avec les paramètres utilisateur
+            const params = new URLSearchParams({
+                __version__: this.config.version,
+                // Passer les informations utilisateur
+                userId: userInfo.userId,
+                userName: userInfo.userName,
+                userEmail: userInfo.userEmail
             });
 
-            console.log("📡 Réponse reçue:", response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("❌ Erreur API:", errorText);
-                throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
+            const iframeUrl = `${this.config.baseUrl}?${params.toString()}`;
             
-            if (!data.token) {
-                throw new Error("Token manquant dans la réponse");
-            }
+            console.log("📍 URL iframe:", iframeUrl);
 
-            console.log("✅ Token Direct Line reçu !");
-            console.log("   Conversation ID:", data.conversationId || 'N/A');
-            console.log("   Expire:", data.expires_in ? `dans ${data.expires_in}s` : 'N/A');
+            // Créer l'iframe
+            const container = document.getElementById('copilot-webchat');
             
-            return data.token;
+            container.innerHTML = `
+                <iframe 
+                    src="${iframeUrl}"
+                    frameborder="0"
+                    style="width: 100%; height: 100%; border: none;"
+                    allow="microphone; camera"
+                    title="Copilot Babilou"
+                ></iframe>
+            `;
+
+            console.log("✅ Iframe créé et inséré");
+            console.log("   User ID:", userInfo.userId);
+            console.log("   User Name:", userInfo.userName);
+            console.log("   User Email:", userInfo.userEmail);
+
+            // Afficher un message de bienvenue temporaire
+            this.showWelcomeMessage(userInfo.userName);
 
         } catch (error) {
-            console.error("❌ === ERREUR RÉCUPÉRATION TOKEN ===");
-            console.error("Type:", error.constructor.name);
-            console.error("Message:", error.message);
-            
-            if (error.stack) {
-                console.error("Stack:", error.stack);
-            }
-            
-            throw new Error(`Impossible d'obtenir le token: ${error.message}`);
-        }
-    }
-
-    async initializeWebChat(directLineToken) {
-        try {
-            console.log("🎨 Initialisation du Web Chat...");
-            
-            const account = authManager.getAccount();
-            
-            // Créer la connexion Direct Line
-            const directLine = window.WebChat.createDirectLine({
-                token: directLineToken
-            });
-
-            // Préparer les informations utilisateur à passer au bot
-            const userContext = {
-                userId: account.localAccountId,
-                userName: account.name,
-                userEmail: account.username
-            };
-
-            console.log("👤 Informations utilisateur:", userContext);
-
-            const styleOptions = {
-                accent: '#0078d4',
-                backgroundColor: 'White',
-                botAvatarInitials: 'AB',
-                botAvatarBackgroundColor: '#0078d4',
-                userAvatarInitials: this.getInitials(account.name),
-                userAvatarBackgroundColor: '#764ba2',
-                bubbleBackground: '#f3f2f1',
-                bubbleBorderRadius: 8,
-                bubbleFromUserBackground: '#0078d4',
-                bubbleFromUserBorderRadius: 8,
-                bubbleFromUserTextColor: 'White',
-                hideUploadButton: true,
-                primaryFont: 'Segoe UI, sans-serif',
-                sendBoxBackground: 'White',
-                sendBoxButtonColor: '#0078d4',
-                sendBoxTextColor: '#000000'
-            };
-
-            // Store pour passer les données utilisateur au bot
-            const store = window.WebChat.createStore({}, ({ dispatch }) => next => action => {
-                // Lors de la connexion, envoyer les infos utilisateur au bot
-                if (action.type === 'DIRECT_LINE/CONNECT_FULFILLED') {
-                    console.log("📤 Envoi des informations utilisateur au bot...");
-                    
-                    // Envoyer un événement avec les infos utilisateur
-                    dispatch({
-                        type: 'WEB_CHAT/SEND_EVENT',
-                        payload: {
-                            name: 'webchat/join',
-                            value: userContext
-                        }
-                    });
-                }
-                return next(action);
-            });
-
-            // Rendre le Web Chat
-            window.WebChat.renderWebChat(
-                {
-                    directLine: directLine,
-                    store: store,
-                    userID: account.localAccountId,
-                    username: account.name,
-                    locale: 'fr-FR',
-                    styleOptions: styleOptions
-                },
-                document.getElementById('copilot-webchat')
-            );
-
-            console.log("✅ Web Chat initialisé");
-            console.log("   User ID:", account.localAccountId);
-            console.log("   Username:", account.name);
-
-        } catch (error) {
-            console.error("❌ Erreur lors de l'initialisation du Web Chat:", error);
+            console.error("❌ Erreur lors de la création de l'iframe:", error);
             throw error;
         }
     }
 
-    getInitials(name) {
-        if (!name) return '?';
-        const parts = name.split(' ');
-        if (parts.length >= 2) {
-            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-        }
-        return name.substring(0, 2).toUpperCase();
+    showWelcomeMessage(userName) {
+        // Créer un overlay de bienvenue qui disparaît après 2 secondes
+        const container = document.getElementById('copilot-webchat');
+        
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeOut 2s forwards;
+        `;
+        
+        overlay.innerHTML = `
+            <div style="text-align: center; color: white;">
+                <h2 style="margin: 0 0 1rem 0; font-size: 2rem;">👋</h2>
+                <h3 style="margin: 0 0 0.5rem 0;">Bonjour ${userName} !</h3>
+                <p style="margin: 0; opacity: 0.9;">Chargement du Copilot...</p>
+            </div>
+        `;
+
+        // Ajouter l'animation CSS
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeOut {
+                0% { opacity: 1; }
+                80% { opacity: 1; }
+                100% { opacity: 0; pointer-events: none; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        container.style.position = 'relative';
+        container.appendChild(overlay);
+
+        // Retirer l'overlay après l'animation
+        setTimeout(() => {
+            overlay.remove();
+        }, 2000);
     }
 
     showError(message) {
@@ -206,10 +151,10 @@ class CopilotAuthenticated {
                     <div style="background: #f3f2f1; padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: #605e5c;">
                         <p style="margin: 0;"><strong>Vérifications :</strong></p>
                         <ul style="text-align: left; margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
-                            <li>Le bot existe dans Copilot Studio</li>
-                            <li>Le bot est publié</li>
-                            <li>L'environnement est correct</li>
-                            <li>Vérifiez la console (F12) pour plus de détails</li>
+                            <li>Le bot est publié dans Copilot Studio</li>
+                            <li>Le canal "Custom website" est activé</li>
+                            <li>L'URL du bot est correcte</li>
+                            <li>Vous êtes connecté avec un compte Microsoft</li>
                         </ul>
                     </div>
                     <button onclick="location.reload();" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
