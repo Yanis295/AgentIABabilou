@@ -68,11 +68,15 @@ class CopilotAuthenticated {
             // Créer l'iframe
             const container = document.getElementById('copilot-webchat');
             
+            // S'assurer que le conteneur prend toute la hauteur
+            container.style.height = '600px';
+            container.style.minHeight = '600px';
+            
             container.innerHTML = `
                 <iframe 
                     src="${iframeUrl}"
                     frameborder="0"
-                    style="width: 100%; height: 100%; border: none;"
+                    style="width: 100%; height: 100%; border: none; display: block;"
                     allow="microphone; camera"
                     title="Copilot Babilou"
                 ></iframe>
